@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    steps:
+      - name: Check out repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        # https://github.com/actions/setup-python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Run focused checks
+        shell: bash
+        run: |
+          python_files=$(git ls-files --cached --others --exclude-standard -- '*.py' | LC_ALL=C sort)
+          if [[ -z "${python_files}" ]]; then
+            echo "No tracked Python files found" >&2
+            exit 1
+          fi
+          python_paths=()
+          while IFS= read -r python_file; do
+            python_paths+=("${python_file}")
+          done <<< "${python_files}"
+          python3 -m py_compile "${python_paths[@]}"
+
+          shell_files=$(git ls-files --cached --others --exclude-standard -- scripts sync tests |
+            awk '/\.(bash|sh)$/' | LC_ALL=C sort)
+          if [[ -z "${shell_files}" ]]; then
+            echo "No tracked shell files found" >&2
+            exit 1
+          fi
+          while IFS= read -r shell_file; do
+            bash -n "${shell_file}"
+          done <<< "${shell_files}"
+
+          test_files=$(git ls-files --cached --others --exclude-standard -- tests |
+            awk '/\/test-.*\.bash$/' | LC_ALL=C sort)
+          if [[ -z "${test_files}" ]]; then
+            echo "No tracked test files found" >&2
+            exit 1
+          fi
+          while IFS= read -r test_file; do
+            bash "${test_file}"
+          done <<< "${test_files}"
+
+  shell-lint:
+    name: Shell lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install shell tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+          GOBIN="${RUNNER_TEMP}/bin" go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1
+
+      - name: Check shell files
+        run: |
+          shell_file_output=$(git ls-files scripts sync tests |
+            awk '/\.(bash|sh)$/' | LC_ALL=C sort)
+          if [[ -z "${shell_file_output}" ]]; then
+            echo "No tracked shell files found" >&2
+            exit 1
+          fi
+          mapfile -t shell_files <<< "${shell_file_output}"
+          shellcheck "${shell_files[@]}"
+          "${RUNNER_TEMP}/bin/shfmt" -d -i 2 -ci -sr -ln bash "${shell_files[@]}"
+
+  config-lint:
+    name: Config and documentation lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check GitHub Action pins
+        run: |
+          action_file_output=$(git ls-files .github | awk '/\.(yaml|yml)$/' | LC_ALL=C sort)
+          if [[ -z "${action_file_output}" ]]; then
+            echo "No tracked GitHub Action files found" >&2
+            exit 1
+          fi
+          mapfile -t action_files <<< "${action_file_output}"
+          bash scripts/check-github-action-shas.sh "${action_files[@]}"
+
+      - name: Set up Python
+        # https://github.com/actions/setup-python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        # https://github.com/actions/setup-node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Install config tools
+        run: |
+          python -m pip install ruff==0.16.3 yamllint==1.38.0
+          cargo install taplo-cli --version 0.9.3 --locked
+
+      - name: Check Python
+        run: |
+          python_file_output=$(git ls-files '*.py' | LC_ALL=C sort)
+          if [[ -z "${python_file_output}" ]]; then
+            echo "No tracked Python files found" >&2
+            exit 1
+          fi
+          mapfile -t python_files <<< "${python_file_output}"
+          ruff check "${python_files[@]}"
+          ruff format --check "${python_files[@]}"
+
+      - name: Check YAML
+        run: >-
+          yamllint --strict --config-file config/yamllint.yaml
+          .github/workflows/ci.yaml config/yamllint.yaml pre-commit/*.yaml
+
+      - name: Check Markdown
+        run: >-
+          npx --yes markdownlint-cli2@0.23.2
+          --config config/markdownlint.jsonc
+          README.md standards/markdown.md pre-commit/README.md
+
+      - name: Check TOML
+        run: |
+          taplo format --check --config config/taplo.toml config/taplo.toml pyproject.toml sync/manifest.toml
+          taplo lint --config config/taplo.toml config/taplo.toml pyproject.toml sync/manifest.toml

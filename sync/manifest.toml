@@ -1,0 +1,144 @@
+version = 1
+repository = "https://github.com/nautechsystems/nautilus_engineering"
+lock_file = ".nautilus-engineering.lock"
+marker_file = ".nautilus-engineering.syncing"
+
+[[artifact]]
+id = "markdown-standard"
+source = "standards/markdown.md"
+target = "docs/markdown-style.md"
+executable = false
+profiles = ["markdown"]
+
+[[artifact]]
+id = "markdownlint-config"
+source = "config/markdownlint.jsonc"
+target = ".markdownlint.jsonc"
+executable = false
+profiles = ["markdown", "pre-commit"]
+
+[[artifact]]
+id = "markdown-table-check"
+source = "scripts/check-markdown-tables.py"
+target = "scripts/check-markdown-tables.py"
+executable = false
+profiles = ["markdown", "pre-commit"]
+
+[[artifact]]
+id = "yamllint-config"
+source = "config/yamllint.yaml"
+target = ".yamllint.yaml"
+executable = false
+profiles = ["yaml", "pre-commit"]
+
+[[artifact]]
+id = "taplo-config"
+source = "config/taplo.toml"
+target = ".taplo.toml"
+executable = false
+profiles = ["toml", "pre-commit"]
+
+[[artifact]]
+id = "pre-commit-markdown"
+source = "pre-commit/markdown.yaml"
+target = ".nautilus-engineering/pre-commit/markdown.yaml"
+executable = false
+profiles = ["pre-commit", "markdown"]
+
+[[artifact]]
+id = "pre-commit-shell"
+source = "pre-commit/shell.yaml"
+target = ".nautilus-engineering/pre-commit/shell.yaml"
+executable = false
+profiles = ["pre-commit", "shell"]
+
+[[artifact]]
+id = "pre-commit-toml"
+source = "pre-commit/toml.yaml"
+target = ".nautilus-engineering/pre-commit/toml.yaml"
+executable = false
+profiles = ["pre-commit", "toml"]
+
+[[artifact]]
+id = "pre-commit-yaml"
+source = "pre-commit/yaml.yaml"
+target = ".nautilus-engineering/pre-commit/yaml.yaml"
+executable = false
+profiles = ["pre-commit", "yaml"]
+
+[[artifact]]
+id = "pre-commit-sync"
+source = "pre-commit/sync.yaml"
+target = ".nautilus-engineering/pre-commit/sync.yaml"
+executable = false
+profiles = ["pre-commit", "sync"]
+
+[[artifact]]
+id = "cargo-tool-version"
+source = "scripts/cargo-tool-version.sh"
+target = "scripts/cargo-tool-version.sh"
+executable = true
+profiles = ["cargo", "tool-versions"]
+
+[[artifact]]
+id = "cargo-cooldown-check"
+source = "scripts/check-cargo-cooldown.sh"
+target = "scripts/check-cargo-cooldown.sh"
+executable = true
+profiles = ["cargo"]
+
+[[artifact]]
+id = "github-action-pin-check"
+source = "scripts/check-github-action-shas.sh"
+target = "scripts/check-github-action-shas.sh"
+executable = true
+profiles = ["ci"]
+
+[[artifact]]
+id = "no-build-package-check"
+source = "scripts/check-no-build-packages.sh"
+target = "scripts/check-no-build-packages.sh"
+executable = true
+profiles = ["python"]
+
+[[artifact]]
+id = "osv-scanner-install"
+source = "scripts/install-osv-scanner.sh"
+target = "scripts/install-osv-scanner.sh"
+executable = true
+profiles = ["security"]
+
+[[artifact]]
+id = "rust-toolchain-version"
+source = "scripts/rust-toolchain.sh"
+target = "scripts/rust-toolchain.sh"
+executable = true
+profiles = ["cargo", "tool-versions"]
+
+[[artifact]]
+id = "tool-version"
+source = "scripts/tool-version.sh"
+target = "scripts/tool-version.sh"
+executable = true
+profiles = ["python", "security", "tool-versions"]
+
+[[artifact]]
+id = "cargo-dependency-update"
+source = "scripts/update-cargo-dependencies.bash"
+target = "scripts/update-cargo-dependencies.bash"
+executable = true
+profiles = ["cargo"]
+
+[[artifact]]
+id = "uv-version"
+source = "scripts/uv-version.sh"
+target = "scripts/uv-version.sh"
+executable = true
+profiles = ["python", "tool-versions"]
+
+[[artifact]]
+id = "sync-check"
+source = "sync/check-synced-files.bash"
+target = "scripts/check-nautilus-engineering-sync.bash"
+executable = true
+profiles = ["sync", "pre-commit"]

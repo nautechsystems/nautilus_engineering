@@ -1,0 +1,8 @@
+- repo: local
+  hooks:
+    - id: check-nautilus-engineering-sync
+      name: check Nautilus engineering sync
+      entry: bash scripts/check-nautilus-engineering-sync.bash --staged
+      language: system
+      pass_filenames: false
+      always_run: true
