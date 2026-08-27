@@ -1,4 +1,14 @@
-#!/usr/bin/env python3
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License, Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software distributed under the
+#  License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+#  express or implied. See the License for the specific language governing permissions and
+#  limitations under the License.
 """Check CI and pre-commit versions against tools.toml."""
 
 import re
@@ -8,6 +18,9 @@ import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+
+
+__all__: tuple[str, ...] = ()
 
 REPO_LINE = re.compile(r"^\s*-\s+repo:\s+([^\s#]+)")
 REV_LINE = re.compile(r"^\s+rev:\s+([^\s#]+)")
@@ -27,7 +40,8 @@ class ToolPin:
     fragment: Path | None
 
 
-def read_catalog(path: Path) -> list[ToolPin]:
+# Catalog validation stays in one pass so every error retains its table context
+def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912
     try:
         catalog = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as error:
@@ -90,7 +104,7 @@ def check_versions(root: Path, pins: list[ToolPin]) -> None:
     script = root / "scripts/tool-version.sh"
     bash = resolve_bash()
     for pin in pins:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             [bash, str(script), pin.name],
             check=False,
             capture_output=True,
@@ -105,14 +119,17 @@ def check_versions(root: Path, pins: list[ToolPin]) -> None:
 
 def resolve_bash() -> str:
     if sys.platform != "win32":
-        return "bash"
+        bash = shutil.which("bash")
+        if bash is None:
+            raise PinError("Bash was not found on PATH")
+        return str(Path(bash).resolve())
 
     git = shutil.which("git")
     if git is not None:
-        for root in Path(git).parents:
+        for root in Path(git).resolve().parents:
             bash = root / "bin" / "bash.exe"
             if bash.is_file():
-                return str(bash)
+                return str(bash.resolve())
 
     raise PinError("Git Bash or MSYS2 Bash was not found beside Git")
 
@@ -149,7 +166,8 @@ def read_pre_commit(path: Path) -> dict[str, tuple[str, int]]:
     return entries
 
 
-def check_pre_commit(root: Path, pins: list[ToolPin]) -> None:
+# Config and fragment validation share one traversal so duplicate checks stay consistent
+def check_pre_commit(root: Path, pins: list[ToolPin]) -> None:  # noqa: C901
     expected = {pin.repository: pin for pin in pins if pin.repository is not None}
     config_path = root / ".pre-commit-config.yaml"
     config_entries = read_pre_commit(config_path)
@@ -211,6 +229,11 @@ def check_ci(root: Path, pins: list[ToolPin]) -> None:
             raise PinError(f"{ci_path}: hard-codes version {pin.version} for [{pin.name}]")
 
 
+def _write(message: str, *, error: bool = False) -> None:
+    stream = sys.stderr if error else sys.stdout
+    stream.write(f"{message}\n")
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     try:
@@ -219,10 +242,10 @@ def main() -> int:
         check_pre_commit(root, pins)
         check_ci(root, pins)
     except PinError as error:
-        print(f"Tool pin check failed: {error}", file=sys.stderr)
+        _write(f"Tool pin check failed: {error}", error=True)
         return 1
 
-    print("Tool pins match tools.toml")
+    _write("Tool pins match tools.toml")
     return 0
 
 

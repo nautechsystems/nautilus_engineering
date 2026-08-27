@@ -3,4 +3,21 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["B", "E4", "E7", "E9", "F", "I", "RUF", "SIM", "UP"]
+select = ["ALL"]
+
+ignore = [
+  "COM812", # Ruff formatter controls trailing commas
+  "D200", # One-line docstrings use the multi-line form by convention
+  "D203", # Conflicts with D211
+  "D212", # Multi-line docstring summaries start on the second line by convention
+  "EM101", # Exception messages stay inline
+  "EM102", # Exception messages stay inline
+  "TRY003", # Exception messages stay inline
+]
+
+[tool.ruff.lint.isort]
+force-single-line = true
+lines-after-imports = 2
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*.py" = ["INP001"] # Command scripts are not import packages

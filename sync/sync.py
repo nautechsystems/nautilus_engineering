@@ -1,10 +1,24 @@
 #!/usr/bin/env python3
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License, Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software distributed under the
+#  License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+#  express or implied. See the License for the specific language governing permissions and
+#  limitations under the License.
+"""Vendor committed Nautilus engineering artifacts into a consumer repository."""
+
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
 import os
+import pathlib
 import re
 import shutil
 import subprocess
@@ -13,12 +27,18 @@ import tempfile
 import tomllib
 from contextlib import suppress
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
-from typing import Any
+from pathlib import Path
+from typing import Literal
+from typing import cast
+from typing import overload
+
+
+__all__: tuple[str, ...] = ()
 
 MANIFEST_PATH = "sync/manifest.toml"
 PROCESS_LOCK_FILE = ".nautilus-engineering.sync-lock"
 TEMP_PREFIX = ".nautilus-engineering.tmp."
+GIT_LS_TREE_FIELD_COUNT = 4
 PATH_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/@+ -")
 WINDOWS_DEVICE_NAMES = frozenset(
     {"aux", "con", "nul", "prn"}
@@ -76,9 +96,24 @@ class Replacement:
     backup: Path
 
 
+def _git_executable() -> str:
+    executable = shutil.which("git")
+    if executable is None:
+        raise SyncError("git was not found on PATH")
+    return str(Path(executable).resolve())
+
+
+@overload
+def run_git(repo: Path, *args: str, text: Literal[True] = True) -> str: ...
+
+
+@overload
+def run_git(repo: Path, *args: str, text: Literal[False]) -> bytes: ...
+
+
 def run_git(repo: Path, *args: str, text: bool = True) -> str | bytes:
-    process = subprocess.run(
-        ["git", "-C", str(repo), *args],
+    process = subprocess.run(  # noqa: S603
+        [_git_executable(), "-C", str(repo), *args],
         capture_output=True,
         check=False,
         text=text,
@@ -89,12 +124,12 @@ def run_git(repo: Path, *args: str, text: bool = True) -> str | bytes:
     return process.stdout
 
 
-def validate_path(value: Any, label: str) -> str:
+def validate_path(value: object, label: str) -> str:
     if not isinstance(value, str) or not value:
         raise SyncError(f"{label} must be a non-empty string")
     if any(character not in PATH_CHARACTERS for character in value):
         raise SyncError(f"{label} contains an unsupported character: {value!r}")
-    path = PurePosixPath(value)
+    path = pathlib.PurePosixPath(value)
     if (
         path.is_absolute()
         or str(path) != value
@@ -114,7 +149,7 @@ def validate_path(value: Any, label: str) -> str:
 
 
 def path_key(value: str) -> tuple[str, ...]:
-    return tuple(part.casefold() for part in PurePosixPath(value).parts)
+    return tuple(part.casefold() for part in pathlib.PurePosixPath(value).parts)
 
 
 def paths_overlap(left: str, right: str) -> bool:
@@ -124,9 +159,12 @@ def paths_overlap(left: str, right: str) -> bool:
     return left_parts[:shared] == right_parts[:shared]
 
 
-def load_manifest(source: Path, revision: str) -> tuple[Manifest, bytes]:
+# Manifest validation stays in one pass so no unchecked model escapes
+def load_manifest(  # noqa: C901, PLR0912, PLR0915
+    source: Path,
+    revision: str,
+) -> tuple[Manifest, bytes]:
     raw = run_git(source, "show", f"{revision}:{MANIFEST_PATH}", text=False)
-    assert isinstance(raw, bytes)
     try:
         data = tomllib.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
@@ -147,9 +185,10 @@ def load_manifest(source: Path, revision: str) -> tuple[Manifest, bytes]:
     if paths_overlap(lock_file, marker_file):
         raise SyncError("lock_file and marker_file paths overlap")
     for managed_path, label in ((lock_file, "lock_file"), (marker_file, "marker_file")):
-        if paths_overlap(managed_path, PROCESS_LOCK_FILE) or PurePosixPath(managed_path).parts[
-            0
-        ].casefold().startswith(TEMP_PREFIX):
+        managed_root = pathlib.PurePosixPath(managed_path).parts[0]
+        if paths_overlap(managed_path, PROCESS_LOCK_FILE) or managed_root.casefold().startswith(
+            TEMP_PREFIX,
+        ):
             raise SyncError(f"{label} overlaps a reserved transaction path")
 
     raw_artifacts = data.get("artifact")
@@ -207,7 +246,6 @@ def source_revision(source: Path) -> str:
         revision = run_git(source, "rev-parse", "--verify", "HEAD^{commit}")
     except SyncError as exc:
         raise SyncError("the source repository has no committed HEAD") from exc
-    assert isinstance(revision, str)
     revision = revision.strip()
     if len(revision) not in (40, 64) or any(
         character not in "0123456789abcdef" for character in revision
@@ -228,7 +266,8 @@ def parse_target_overrides(values: list[str]) -> dict[str, str]:
     return overrides
 
 
-def select_artifacts(
+# Selection validates the complete request before any consumer mutation begins
+def select_artifacts(  # noqa: C901, PLR0912
     manifest: Manifest,
     profiles: list[str],
     artifact_ids: list[str],
@@ -274,12 +313,13 @@ def select_artifacts(
         target = overrides.get(artifact.id, artifact.target)
         if artifact.target_fixed and target != artifact.target:
             raise SyncError(f"artifact {artifact.id} target cannot be overridden: {target}")
-        if PurePosixPath(target).parts[0].casefold().startswith(TEMP_PREFIX):
+        if pathlib.PurePosixPath(target).parts[0].casefold().startswith(TEMP_PREFIX):
             raise SyncError(f"artifact {artifact.id} uses a reserved temporary path: {target}")
         for reserved_path in reserved:
             if paths_overlap(target, reserved_path):
                 raise SyncError(
-                    f"artifact {artifact.id} target overlaps reserved path {reserved_path}: {target}"
+                    f"artifact {artifact.id} target overlaps reserved path "
+                    f"{reserved_path}: {target}",
                 )
         for existing_target, existing_id in targets:
             if paths_overlap(target, existing_target):
@@ -294,9 +334,8 @@ def select_artifacts(
 
 def committed_file(source: Path, revision: str, artifact: Artifact) -> bytes:
     tree_line = run_git(source, "ls-tree", revision, "--", artifact.source)
-    assert isinstance(tree_line, str)
     fields = tree_line.strip().split(None, 3)
-    if len(fields) != 4 or fields[1] != "blob":
+    if len(fields) != GIT_LS_TREE_FIELD_COUNT or fields[1] != "blob":
         raise SyncError(f"artifact source is not a committed file: {artifact.source}")
     mode = fields[0]
     expected_mode = "100755" if artifact.executable else "100644"
@@ -304,9 +343,7 @@ def committed_file(source: Path, revision: str, artifact: Artifact) -> bytes:
         raise SyncError(
             f"artifact {artifact.id} has mode {mode}; manifest requires {expected_mode}"
         )
-    content = run_git(source, "show", f"{revision}:{artifact.source}", text=False)
-    assert isinstance(content, bytes)
-    return content
+    return run_git(source, "show", f"{revision}:{artifact.source}", text=False)
 
 
 def consumer_root(path: str) -> Path:
@@ -314,7 +351,6 @@ def consumer_root(path: str) -> Path:
     if not requested.is_dir():
         raise SyncError(f"consumer directory not found: {requested}")
     top_level = run_git(requested, "rev-parse", "--show-toplevel")
-    assert isinstance(top_level, str)
     root = Path(top_level.strip()).resolve()
     if root != requested:
         raise SyncError(f"--consumer must name the repository root: {root}")
@@ -323,7 +359,7 @@ def consumer_root(path: str) -> Path:
 
 def reject_symlink_path(root: Path, relative: str) -> None:
     current = root
-    parts = PurePosixPath(relative).parts
+    parts = pathlib.PurePosixPath(relative).parts
     for index, part in enumerate(parts):
         current = current / part
         if current.is_symlink():
@@ -332,7 +368,11 @@ def reject_symlink_path(root: Path, relative: str) -> None:
             raise SyncError(f"managed path parent is not a directory: {relative}")
 
 
-def load_locked_selection(lock_path: Path, manifest: Manifest) -> LockedSelection | None:
+# Lock validation stays in one pass so installation receives one complete model
+def load_locked_selection(  # noqa: C901, PLR0912
+    lock_path: Path,
+    manifest: Manifest,
+) -> LockedSelection | None:
     if not lock_path.exists():
         return None
     if lock_path.is_symlink() or not lock_path.is_file():
@@ -406,7 +446,7 @@ def load_locked_selection(lock_path: Path, manifest: Manifest) -> LockedSelectio
         if any(
             paths_overlap(path, reserved)
             for reserved in (manifest.lock_file, manifest.marker_file, PROCESS_LOCK_FILE)
-        ) or PurePosixPath(path).parts[0].casefold().startswith(TEMP_PREFIX):
+        ) or pathlib.PurePosixPath(path).parts[0].casefold().startswith(TEMP_PREFIX):
             raise SyncError(f"existing sync lock contains a reserved path: {path}")
         if any(paths_overlap(path, existing) for existing in path_values):
             raise SyncError(f"existing sync lock contains overlapping paths: {path}")
@@ -446,7 +486,8 @@ def render_lock(
     return "\n".join(lines).encode("utf-8")
 
 
-def install_files(
+# Installation and rollback remain together to keep the transaction state explicit
+def install_files(  # noqa: C901, PLR0915
     consumer: Path,
     manifest: Manifest,
     lock_content: bytes,
@@ -473,7 +514,8 @@ def install_files(
     replacements: list[Replacement] = []
     try:
         if marker_path.exists() or marker_path.is_symlink():
-            raise SyncError(
+            # This failure must pass through the transaction cleanup below
+            raise SyncError(  # noqa: TRY301
                 f"an incomplete sync marker exists: {marker_path}; inspect the consumer "
                 "before removing it"
             )
@@ -497,25 +539,28 @@ def install_files(
 
         for item, temp_path in staged:
             reject_symlink_path(consumer, item.target)
-            destination = consumer.joinpath(*PurePosixPath(item.target).parts)
+            destination = consumer.joinpath(*pathlib.PurePosixPath(item.target).parts)
             destination.parent.mkdir(parents=True, exist_ok=True)
             if destination.exists() and not destination.is_file():
-                raise SyncError(f"managed target is not a regular file: {item.target}")
+                # This failure must pass through the transaction cleanup below
+                raise SyncError(  # noqa: TRY301
+                    f"managed target is not a regular file: {item.target}",
+                )
             backup = temp_dir / "previous" / item.target
             replacement = Replacement(destination, temp_path, backup)
             replacements.append(replacement)
             if destination.exists():
                 backup.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(destination, backup)
-            os.replace(temp_path, destination)
+                destination.replace(backup)
+            temp_path.replace(destination)
 
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         lock_backup = temp_dir / "previous" / manifest.lock_file
         replacements.append(Replacement(lock_path, temp_lock, lock_backup))
         if lock_path.exists():
             lock_backup.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(lock_path, lock_backup)
-        os.replace(temp_lock, lock_path)
+            lock_path.replace(lock_backup)
+        temp_lock.replace(lock_path)
         marker_path.unlink()
         transaction_resolved = True
     except BaseException as exc:
@@ -525,10 +570,10 @@ def install_files(
                 marker_path.unlink()
                 transaction_resolved = True
             except (OSError, SyncError) as restore_error:
-                assert temp_dir is not None
+                failed_temp_dir = cast("Path", temp_dir)
                 raise SyncError(
                     "sync failed and the prior files could not be fully restored; "
-                    f"inspect {marker_path} and {temp_dir / 'previous'}: {restore_error}"
+                    f"inspect {marker_path} and {failed_temp_dir / 'previous'}: {restore_error}"
                 ) from exc
         raise
     finally:
@@ -545,7 +590,7 @@ def restore_files(replacements: list[Replacement]) -> None:
     for replacement in reversed(replacements):
         try:
             if replacement.backup.exists():
-                os.replace(replacement.backup, replacement.destination)
+                replacement.backup.replace(replacement.destination)
             elif not replacement.staged.exists() and replacement.destination.exists():
                 replacement.destination.unlink()
         except OSError as exc:
@@ -554,18 +599,23 @@ def restore_files(replacements: list[Replacement]) -> None:
         raise SyncError("; ".join(failures))
 
 
+def _write(message: str, *, error: bool = False) -> None:
+    stream = sys.stderr if error else sys.stdout
+    stream.write(f"{message}\n")
+
+
 def command_list(manifest: Manifest) -> None:
     profiles = sorted({profile for artifact in manifest.artifacts for profile in artifact.profiles})
-    print("Profiles:")
-    print("  all")
+    _write("Profiles:")
+    _write("  all")
     for profile in profiles:
-        print(f"  {profile}")
-    print("\nArtifacts:")
+        _write(f"  {profile}")
+    _write("\nArtifacts:")
     target_width = max(len(artifact.target) for artifact in manifest.artifacts)
-    print(f"  {'ID':<28} {'Target':<{target_width}} Profiles")
+    _write(f"  {'ID':<28} {'Target':<{target_width}} Profiles")
     for artifact in manifest.artifacts:
         memberships = ", ".join(artifact.profiles)
-        print(f"  {artifact.id:<28} {artifact.target:<{target_width}} {memberships}")
+        _write(f"  {artifact.id:<28} {artifact.target:<{target_width}} {memberships}")
 
 
 def command_vendor(
@@ -592,13 +642,13 @@ def command_vendor(
     )
     consumer = consumer_root(args.consumer)
     stale_paths = install_files(consumer, manifest, lock_content, selected)
-    print(f"Vendored {len(selected)} artifact(s) from {revision}")
+    _write(f"Vendored {len(selected)} artifact(s) from {revision}")
     for item in selected:
-        print(f"  {item.artifact.id}: {item.target}")
+        _write(f"  {item.artifact.id}: {item.target}")
     if stale_paths:
-        print("Previously managed paths left unchanged and removed from the lock:")
+        _write("Previously managed paths left unchanged and removed from the lock:")
         for path in sorted(stale_paths):
-            print(f"  {path}")
+            _write(f"  {path}")
 
 
 def command_update(
@@ -645,9 +695,9 @@ def command_update(
         selected,
     )
     install_files(consumer, manifest, lock_content, selected)
-    print(f"Updated {len(selected)} artifact(s) from {revision}")
+    _write(f"Updated {len(selected)} artifact(s) from {revision}")
     for item in selected:
-        print(f"  {item.artifact.id}: {item.target}")
+        _write(f"  {item.artifact.id}: {item.target}")
 
 
 def build_parser(default_source: Path) -> argparse.ArgumentParser:
@@ -703,7 +753,7 @@ def main() -> int:
         else:
             command_vendor(source, revision, manifest, raw, args)
     except (OSError, SyncError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        _write(f"Error: {exc}", error=True)
         return 2
     return 0
 

@@ -1,15 +1,31 @@
-#!/usr/bin/env python3
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License, Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software distributed under the
+#  License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+#  express or implied. See the License for the specific language governing permissions and
+#  limitations under the License.
 """Normalize GFM table column widths and delimiter padding in Markdown files."""
 
 import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
+
+
+__all__: tuple[str, ...] = ()
 
 DELIMITER_RE = re.compile(r"^\|(?:\s*:?-+:?\s*\|)+$")
 FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})\s*(.*)$")
 PIPE_RE = re.compile(r"(?<!\\)\|")
 
 MIN_DASHES = 3
+MIN_TABLE_ROWS = 2
+UTF16_BMP_MAX = 0xFFFF
 
 
 def split_cells(row: str) -> list[str]:
@@ -17,10 +33,10 @@ def split_cells(row: str) -> list[str]:
 
 
 def utf16_width(value: str) -> int:
-    return len(value) + sum(1 for character in value if ord(character) > 0xFFFF)
+    return len(value) + sum(1 for character in value if ord(character) > UTF16_BMP_MAX)
 
 
-def find_tables(lines: list[str]):
+def find_tables(lines: list[str]) -> Iterator[tuple[int, int]]:
     fence = None
     index = 0
     while index < len(lines):
@@ -71,7 +87,7 @@ def render_delimiter(marker: str, width: int) -> str:
 
 
 def normalize_table(rows: list[str]) -> list[str] | None:
-    if len(rows) < 2 or not DELIMITER_RE.match(rows[1].rstrip()):
+    if len(rows) < MIN_TABLE_ROWS or not DELIMITER_RE.match(rows[1].rstrip()):
         return None
 
     grid = [split_cells(row) for row in rows]
@@ -122,14 +138,18 @@ def normalize_file(path: Path) -> bool:
     return True
 
 
+def _write(message: str) -> None:
+    sys.stdout.write(f"{message}\n")
+
+
 def main() -> int:
     paths = [Path(argument) for argument in sys.argv[1:] if argument.endswith(".md")]
     changed = [path for path in sorted(paths) if normalize_file(path)]
 
     if changed:
         for path in changed:
-            print(f"{path}: normalized table column widths")
-        print(
+            _write(f"{path}: normalized table column widths")
+        _write(
             "\nTables are padded to the widest cell plus one space either side."
             "\nMD060 enforces pipe alignment but not column width.",
         )
