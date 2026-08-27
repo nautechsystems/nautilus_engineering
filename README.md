@@ -43,6 +43,12 @@ that needs local markdownlint or yamllint policy can vendor the baseline elsewhe
 and extend it from its root configuration. Taplo configuration is synchronized as a whole file
 because Taplo does not provide cross-file configuration inheritance.
 
+The root `tools.toml` is the version catalog for tools that validate this repository. CI resolves
+its tool versions through `scripts/tool-version.sh`, and `make check` verifies that external hook
+revisions in the local pre-commit config and shared fragments match the catalog. Consumer
+repositories keep their own `tools.toml` because their tool sets and update timing differ; the
+catalog is not a vendored artifact.
+
 ## Pre-commit definitions
 
 The YAML files under `pre-commit/` contain complete repository entries for the shared shell, YAML,
@@ -137,10 +143,17 @@ Run the focused repository checks with:
 make check
 ```
 
-The check runs syntax checks and every focused test in this repository. It does not run consumer
-repository test suites. CI runs the same functional checks on Linux, macOS, and Windows, then runs
-shell, YAML, Markdown, and TOML lint on Linux. CI also checks that each external GitHub Action has
-its source URL immediately above `uses:` and that its full commit SHA matches the named release tag.
+The check runs syntax checks, verifies tool pins, and runs every focused test in this repository. It
+does not run consumer repository test suites. Install the local hooks with `prek install` and run
+every formatter, linter, and repository check with:
+
+```bash
+make pre-commit
+```
+
+CI runs the same functional checks on Linux, macOS, and Windows, then runs shell, Python, YAML,
+Markdown, and TOML lint on Linux. CI also checks that each external GitHub Action has its source URL
+immediately above `uses:` and that its full commit SHA matches the named release tag.
 
 ## License
 

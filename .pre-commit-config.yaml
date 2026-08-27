@@ -1,0 +1,94 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: forbid-new-submodules
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: trailing-whitespace
+      - id: debug-statements
+      - id: detect-private-key
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-illegal-windows-names
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-xml
+      - id: check-yaml
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.3
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.13.1-1
+    hooks:
+      - id: shfmt
+        args: ["-i", "2", "-ci", "-sr", "-ln", "bash", "-w"]
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1-1
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        args: [--strict, --config-file, config/yamllint.yaml]
+
+  - repo: https://github.com/ComPWA/taplo-pre-commit
+    rev: v0.9.3
+    hooks:
+      - id: taplo-format
+        args: [--config, config/taplo.toml]
+      - id: taplo-lint
+        args: [--config, config/taplo.toml]
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.23.2
+    hooks:
+      - id: markdownlint-cli2
+        name: markdownlint
+        entry: markdownlint-cli2
+        args:
+          - --config
+          - config/markdownlint.jsonc
+          - --fix
+        files: "\\.md$"
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        name: actionlint (syntax/structure)
+
+  - repo: local
+    hooks:
+      - id: check-markdown-tables
+        name: normalize markdown table padding
+        description: Pads GFM table columns to their widest cell, which MD060 does not check
+        entry: python3 -B scripts/check-markdown-tables.py
+        language: system
+        types: [markdown]
+
+      - id: check-github-action-shas
+        name: check GitHub Action pins
+        description: Verifies external actions use full SHAs matching their named release tags
+        entry: bash scripts/check-github-action-shas.sh
+        language: system
+        files: ^\.github/(actions|workflows)/.*\.ya?ml$
+
+      - id: check-repository
+        name: check repository behavior
+        entry: make check
+        language: system
+        pass_filenames: false
+        always_run: true

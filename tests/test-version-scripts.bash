@@ -19,6 +19,9 @@ version = "0.12.3"
 
 [prek]
 version = "nightly-2026-08-25"
+
+[shellcheck]
+version = "0.11.0.1"
 TOML
 cat > "${test_root}/Cargo.toml" << 'TOML'
 [workspace]
@@ -66,6 +69,8 @@ expect_output "tool version reads semantic version" "0.12.3" \
   bash "${test_root}/scripts/tool-version.sh" uv
 expect_output "tool version accepts pinned nightly" "nightly-2026-08-25" \
   bash "${test_root}/scripts/tool-version.sh" prek
+expect_output "tool version accepts four-component version" "0.11.0.1" \
+  bash "${test_root}/scripts/tool-version.sh" shellcheck
 expect_output "uv version delegates to tool version" "0.12.3" \
   bash "${test_root}/scripts/uv-version.sh"
 expect_failure "tool version requires one name" 2 "Usage: tool-version.sh" \

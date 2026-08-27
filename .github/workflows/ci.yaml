@@ -79,11 +79,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Python
+        # https://github.com/actions/setup-python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
       - name: Install shell tools
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes shellcheck
-          GOBIN="${RUNNER_TEMP}/bin" go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1
+          python -m pip install "shellcheck-py==$(bash scripts/tool-version.sh shellcheck)"
+          GOBIN="${RUNNER_TEMP}/bin" \
+            go install "mvdan.cc/sh/v3/cmd/shfmt@v$(bash scripts/tool-version.sh shfmt)"
 
       - name: Check shell files
         run: |
@@ -132,8 +138,17 @@ jobs:
 
       - name: Install config tools
         run: |
-          python -m pip install ruff==0.16.3 yamllint==1.38.0
-          cargo install taplo-cli --version 0.9.3 --locked
+          python -m pip install \
+            "prek==$(bash scripts/tool-version.sh prek)" \
+            "ruff==$(bash scripts/tool-version.sh ruff)" \
+            "yamllint==$(bash scripts/tool-version.sh yamllint)"
+          cargo install \
+            taplo-cli \
+            --version "$(bash scripts/tool-version.sh taplo)" \
+            --locked
+
+      - name: Validate pre-commit config
+        run: prek validate-config .pre-commit-config.yaml
 
       - name: Check Python
         run: |
@@ -149,15 +164,17 @@ jobs:
       - name: Check YAML
         run: >-
           yamllint --strict --config-file config/yamllint.yaml
-          .github/workflows/ci.yaml config/yamllint.yaml pre-commit/*.yaml
+          .github/workflows/ci.yaml .pre-commit-config.yaml config/yamllint.yaml pre-commit/*.yaml
 
       - name: Check Markdown
         run: >-
-          npx --yes markdownlint-cli2@0.23.2
+          npx --yes "markdownlint-cli2@$(bash scripts/tool-version.sh markdownlint-cli2)"
           --config config/markdownlint.jsonc
           README.md standards/markdown.md pre-commit/README.md
 
       - name: Check TOML
         run: |
-          taplo format --check --config config/taplo.toml config/taplo.toml pyproject.toml sync/manifest.toml
-          taplo lint --config config/taplo.toml config/taplo.toml pyproject.toml sync/manifest.toml
+          taplo format --check --config config/taplo.toml \
+            config/taplo.toml pyproject.toml sync/manifest.toml tools.toml
+          taplo lint --config config/taplo.toml \
+            config/taplo.toml pyproject.toml sync/manifest.toml tools.toml

@@ -1,0 +1,59 @@
+# Version pins for tools used to validate this repository
+#
+# Shared hook fragments keep their required YAML structure. The pin checker verifies those
+# revisions and this repository's pre-commit config against this catalog.
+
+[prek]
+version = "0.4.14"
+ci = true
+
+[pre-commit-hooks]
+version = "6.0.0"
+pre-commit-repository = "https://github.com/pre-commit/pre-commit-hooks"
+pre-commit-revision = "v{version}"
+
+[ruff]
+version = "0.16.3"
+ci = true
+pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
+pre-commit-revision = "v{version}"
+
+[shfmt]
+version = "3.13.1"
+ci = true
+pre-commit-repository = "https://github.com/scop/pre-commit-shfmt"
+pre-commit-revision = "v{version}-1"
+pre-commit-fragment = "pre-commit/shell.yaml"
+
+[shellcheck]
+version = "0.11.0.1"
+ci = true
+pre-commit-repository = "https://github.com/shellcheck-py/shellcheck-py"
+pre-commit-revision = "v{version}-1"
+pre-commit-fragment = "pre-commit/shell.yaml"
+
+[yamllint]
+version = "1.38.0"
+ci = true
+pre-commit-repository = "https://github.com/adrienverge/yamllint"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/yaml.yaml"
+
+[taplo]
+version = "0.9.3"
+ci = true
+pre-commit-repository = "https://github.com/ComPWA/taplo-pre-commit"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/toml.yaml"
+
+[markdownlint-cli2]
+version = "0.23.2"
+ci = true
+pre-commit-repository = "https://github.com/DavidAnson/markdownlint-cli2"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/markdown.yaml"
+
+[actionlint]
+version = "1.7.12"
+pre-commit-repository = "https://github.com/rhysd/actionlint"
+pre-commit-revision = "v{version}"

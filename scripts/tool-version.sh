@@ -42,7 +42,7 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-if [[ ! "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?|nightly-[0-9]{4}-[0-9]{2}-[0-9]{2})$ ]]; then
+if [[ ! "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?|nightly-[0-9]{4}-[0-9]{2}-[0-9]{2})$ ]]; then
   echo "Error: Invalid version for [$TOOL_NAME]: $VERSION" >&2
   exit 1
 fi

@@ -5,9 +5,9 @@ SHELL_FILES := $(shell git ls-files --cached --others --exclude-standard -- scri
 TEST_FILES := $(shell git ls-files --cached --others --exclude-standard -- tests | awk '/\/test-.*\.bash$$/' | LC_ALL=C sort)
 ACTION_FILES := $(shell git ls-files --cached --others --exclude-standard -- .github | awk '/\.(yaml|yml)$$/' | LC_ALL=C sort)
 
-.PHONY: check check-github-action-pins check-python check-shell test
+.PHONY: check check-github-action-pins check-python check-shell check-tool-pins pre-commit test
 
-check: check-python check-shell test
+check: check-python check-shell check-tool-pins test
 
 check-python:
 	@test -n "$(strip $(PYTHON_FILES))" || { echo "No tracked Python files found" >&2; exit 1; }
@@ -17,9 +17,15 @@ check-shell:
 	@test -n "$(strip $(SHELL_FILES))" || { echo "No tracked shell files found" >&2; exit 1; }
 	bash -n $(SHELL_FILES)
 
+check-tool-pins:
+	python3 -B scripts/check-tool-pins.py
+
 check-github-action-pins:
 	@test -n "$(strip $(ACTION_FILES))" || { echo "No tracked GitHub Action files found" >&2; exit 1; }
 	bash scripts/check-github-action-shas.sh $(ACTION_FILES)
+
+pre-commit:
+	prek run --all-files
 
 test:
 	@test -n "$(strip $(TEST_FILES))" || { echo "No tracked test files found" >&2; exit 1; }
