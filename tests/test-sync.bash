@@ -530,16 +530,29 @@ git -C "$full_source" commit --quiet -m source
 fixed_consumer="${test_root}/fixed-consumer"
 mkdir "$fixed_consumer"
 git -C "$fixed_consumer" init --quiet
-status=0
-output=$(bash "$SYNC_SCRIPT" --source "$full_source" vendor \
-  --consumer "$fixed_consumer" \
-  --artifact markdown-table-check \
-  --target markdown-table-check=shared/check-markdown-tables.py 2>&1) || status=$?
-if [[ "$status" == 2 && "$output" == *"target cannot be overridden"* ]] &&
+fixed_target_failed=false
+for fixed_artifact in \
+  markdown-table-check \
+  cargo-cooldown-check \
+  cargo-dependency-update; do
+  status=0
+  output=$(bash "$SYNC_SCRIPT" --source "$full_source" vendor \
+    --consumer "$fixed_consumer" \
+    --artifact "$fixed_artifact" \
+    --target "${fixed_artifact}=shared/${fixed_artifact}" 2>&1) || status=$?
+  if [[ "$status" != 2 ||
+    "$output" != *"artifact ${fixed_artifact} target cannot be overridden"* ]]; then
+    printf 'FAIL fixed target %s: exit %s\n%s\n' "$fixed_artifact" "$status" "$output" >&2
+    fixed_target_failed=true
+  fi
+done
+if [[ "$fixed_target_failed" == false ]] &&
   [[ ! -e "${fixed_consumer}/.nautilus-engineering.syncing" ]]; then
   printf 'ok   fixed-target artifacts reject incompatible consumer paths\n'
 else
-  printf 'FAIL fixed target: exit %s\n%s\n' "$status" "$output" >&2
+  if [[ -e "${fixed_consumer}/.nautilus-engineering.syncing" ]]; then
+    printf 'FAIL fixed target left a sync marker\n' >&2
+  fi
   failures=$((failures + 1))
 fi
 

@@ -53,7 +53,7 @@ MARKDOWN
 status=0
 python3 -B "$CHECK_SCRIPT" "$table_file" "$fenced_file" > "$output_file" || status=$?
 if [[ "$status" != 1 ]] ||
-  ! grep -Fq "${table_file}: normalized table column widths" "$output_file" ||
+  ! grep -Fq "table.md: normalized table column widths" "$output_file" ||
   grep -Fq "${fenced_file}:" "$output_file" ||
   ! diff -u "$expected_file" "$table_file"; then
   printf 'FAIL normalization: exit %s\n' "$status" >&2

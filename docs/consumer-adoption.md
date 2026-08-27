@@ -6,7 +6,7 @@ their source and hashes in `.nautilus-engineering.lock`.
 
 ## Before you start
 
-- Use Git, Bash, and Python 3.11 or later. On Windows, run the Bash commands from Git Bash or MSYS2.
+- Use Git, Bash, and Python 3.12 or later. On Windows, run the Bash commands from Git Bash or MSYS2.
 - Work from the `nautilus_engineering` repository root at the exact commit you intend to adopt.
 - Confirm that the repository URL in `sync/manifest.toml` contains that commit. Other contributors
   and CI must be able to reproduce the lock without access to your local checkout.
@@ -19,6 +19,17 @@ their source and hashes in `.nautilus-engineering.lock`.
 Consumers that render shared pre-commit definitions need `.pre-commit-config.yaml` with one
 top-level `repos:` key. Keep repository-specific hooks, exclusions, and top-level settings outside
 the managed section.
+
+Before the first sync, add its transient state to the consumer's `.gitignore`:
+
+```gitignore
+.nautilus-engineering.syncing
+.nautilus-engineering.sync-lock
+.nautilus-engineering.tmp.*
+```
+
+The ignore rules prevent accidental staging of recovery data. The checker still fails while a sync
+marker or process lock exists.
 
 ## Choose a selection
 

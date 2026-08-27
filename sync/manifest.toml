@@ -98,6 +98,7 @@ profiles = ["cargo", "tool-versions"]
 id = "cargo-cooldown-check"
 source = "scripts/check-cargo-cooldown.sh"
 target = "scripts/check-cargo-cooldown.sh"
+target_fixed = true
 executable = true
 profiles = ["cargo"]
 
@@ -140,6 +141,7 @@ profiles = ["python", "security", "tool-versions"]
 id = "cargo-dependency-update"
 source = "scripts/update-cargo-dependencies.bash"
 target = "scripts/update-cargo-dependencies.bash"
+target_fixed = true
 executable = true
 profiles = ["cargo"]
 

@@ -20,6 +20,12 @@ for required in git awk jq curl date grep; do
   }
 done
 
+if [[ $("$REAL_DATE" -u -d "1970-01-01T00:00:01Z" +%s 2> /dev/null) == "1" ]]; then
+  REAL_DATE_KIND=gnu
+else
+  REAL_DATE_KIND=bsd
+fi
+
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/nautilus-cooldown-test.XXXXXX")"
 trap 'rm -rf "$test_root"' EXIT
 
@@ -151,10 +157,16 @@ case " $* " in
     ;;
 esac
 if [[ "${1:-}" == "-u" && "${2:-}" == "-r" ]]; then
-  exec "$REAL_DATE" -u -d "@$3" "$4"
+  if [[ "$REAL_DATE_KIND" == gnu ]]; then
+    exec "$REAL_DATE" -u -d "@$3" "$4"
+  fi
+  exec "$REAL_DATE" "$@"
 fi
 if [[ "${1:-}" == "-j" && "${2:-}" == "-u" && "${3:-}" == "-f" ]]; then
-  exec "$REAL_DATE" -u -d "$5" "$6"
+  if [[ "$REAL_DATE_KIND" == gnu ]]; then
+    exec "$REAL_DATE" -u -d "$5" "$6"
+  fi
+  exec "$REAL_DATE" "$@"
 fi
 exec "$REAL_DATE" "$@"
 FAKE_DATE
@@ -169,9 +181,10 @@ export FAKE_CRATES_FIXTURE="$fixture"
 export FAKE_CARGO_LOG="$cargo_log"
 export FAKE_CURL_LOG="$curl_log"
 export REAL_DATE
+export REAL_DATE_KIND
 
 # Test controls must not inherit state from a developer's shell
-unset CHANGED_BASE_SHA
+unset CHANGED_BASE_SHA CI
 unset FAKE_CARGO_FAIL_PACKAGE FAKE_CARGO_FAIL_OFFLINE_PACKAGE FAKE_CARGO_METADATA_FAIL
 
 fresh_date="$("$REAL_DATE" -u +%Y-%m-%dT%H:%M:%SZ)"

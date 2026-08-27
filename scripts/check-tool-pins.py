@@ -2,6 +2,7 @@
 """Check CI and pre-commit versions against tools.toml."""
 
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -87,9 +88,10 @@ def read_catalog(path: Path) -> list[ToolPin]:
 
 def check_versions(root: Path, pins: list[ToolPin]) -> None:
     script = root / "scripts/tool-version.sh"
+    bash = resolve_bash()
     for pin in pins:
         result = subprocess.run(
-            ["bash", str(script), pin.name],
+            [bash, str(script), pin.name],
             check=False,
             capture_output=True,
             text=True,
@@ -99,6 +101,20 @@ def check_versions(root: Path, pins: list[ToolPin]) -> None:
             raise PinError(f"tools.toml [{pin.name}]: {detail}")
         if result.stdout != pin.version:
             raise PinError(f"tools.toml [{pin.name}]: tool-version.sh returned {result.stdout!r}")
+
+
+def resolve_bash() -> str:
+    if sys.platform != "win32":
+        return "bash"
+
+    git = shutil.which("git")
+    if git is not None:
+        for root in Path(git).parents:
+            bash = root / "bin" / "bash.exe"
+            if bash.is_file():
+                return str(bash)
+
+    raise PinError("Git Bash or MSYS2 Bash was not found beside Git")
 
 
 def read_pre_commit(path: Path) -> dict[str, tuple[str, int]]:
