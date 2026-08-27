@@ -2,10 +2,9 @@
 
 Standard revision: 1
 
-This document defines the shared Markdown baseline for Nautilus repositories and related
-development repositories. The maintained source is `standards/markdown.md` in the
-`nautilus_engineering` repository. Keep consumer copies byte-for-byte identical and put
-repository-specific additions in a separate local guide.
+This document defines a shared Markdown baseline for repositories that adopt a local copy. Keep
+copies byte-for-byte identical to the maintained source and put repository-specific additions in a
+separate local guide.
 
 ## Language and extensions
 
