@@ -326,6 +326,183 @@ case "$(uname -s)" in
     ;;
 esac
 
+update_source="${test_root}/update-source"
+update_consumer="${test_root}/update-consumer"
+mkdir -p "${update_source}/config" "${update_source}/sync" "$update_consumer"
+cat > "${update_source}/config/base.txt" << 'TEXT'
+base version 1
+TEXT
+cat > "${update_source}/config/direct.txt" << 'TEXT'
+direct version 1
+TEXT
+cat > "${update_source}/config/future.txt" << 'TEXT'
+future version 1
+TEXT
+cat > "${update_source}/sync/manifest.toml" << 'TOML'
+version = 1
+repository = "https://github.com/nautechsystems/nautilus_engineering"
+lock_file = ".nautilus-engineering.lock"
+marker_file = ".nautilus-engineering.syncing"
+
+[[artifact]]
+id = "base-config"
+source = "config/base.txt"
+target = "config/base.txt"
+executable = false
+profiles = ["base"]
+
+[[artifact]]
+id = "direct-config"
+source = "config/direct.txt"
+target = "config/direct.txt"
+executable = false
+profiles = ["direct"]
+
+[[artifact]]
+id = "future-config"
+source = "config/future.txt"
+target = "config/future.txt"
+executable = false
+profiles = ["future"]
+TOML
+git -C "$update_source" init --quiet
+git -C "$update_source" config user.email test@example.com
+git -C "$update_source" config user.name Test
+git -C "$update_source" config commit.gpgsign false
+git -C "$update_source" add -A
+git -C "$update_source" commit --quiet -m source-v1
+git -C "$update_consumer" init --quiet
+status=0
+output=$(bash "$SYNC_SCRIPT" --source "$update_source" update \
+  --consumer "$update_consumer" 2>&1) || status=$?
+if [[ "$status" == 2 && "$output" == *"existing sync lock not found"* ]]; then
+  printf 'ok   update requires an existing consumer lock\n'
+else
+  printf 'FAIL update without lock: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+bash "$SYNC_SCRIPT" --source "$update_source" vendor \
+  --consumer "$update_consumer" \
+  --profile base \
+  --artifact direct-config \
+  --target base-config=shared/base.txt > /dev/null
+
+cat > "${update_source}/config/base.txt" << 'TEXT'
+base version 2
+TEXT
+cat > "${update_source}/config/direct.txt" << 'TEXT'
+direct version 2
+TEXT
+cat > "${update_source}/sync/manifest.toml" << 'TOML'
+version = 1
+repository = "https://github.com/nautechsystems/nautilus_engineering"
+lock_file = ".nautilus-engineering.lock"
+marker_file = ".nautilus-engineering.syncing"
+
+[[artifact]]
+id = "base-config"
+source = "config/base.txt"
+target = "config/base-moved.txt"
+executable = false
+profiles = ["base"]
+
+[[artifact]]
+id = "direct-config"
+source = "config/direct.txt"
+target = "config/direct.txt"
+executable = false
+profiles = ["direct"]
+
+[[artifact]]
+id = "future-config"
+source = "config/future.txt"
+target = "config/future.txt"
+executable = false
+profiles = ["base"]
+TOML
+git -C "$update_source" add -A
+git -C "$update_source" commit --quiet -m source-v2
+update_revision=$(git -C "$update_source" rev-parse HEAD)
+status=0
+output=$(bash "$SYNC_SCRIPT" --source "$update_source" update \
+  --consumer "$update_consumer" 2>&1) || status=$?
+if [[ "$status" == 0 && "$output" == *"Updated 2 artifact(s)"* ]] &&
+  [[ $(< "${update_consumer}/shared/base.txt") == "base version 2" ]] &&
+  [[ $(< "${update_consumer}/config/direct.txt") == "direct version 2" ]] &&
+  [[ ! -e "${update_consumer}/config/base-moved.txt" ]] &&
+  [[ ! -e "${update_consumer}/config/future.txt" ]] &&
+  grep -Fq "revision = \"${update_revision}\"" \
+    "${update_consumer}/.nautilus-engineering.lock" &&
+  grep -Fq 'profiles = ["base"]' "${update_consumer}/.nautilus-engineering.lock"; then
+  printf 'ok   update preserves the locked artifact set, profiles, and target overrides\n'
+else
+  printf 'FAIL update selection: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+status=0
+output=$(bash "$SYNC_SCRIPT" --source "$update_source" update \
+  --consumer "$update_consumer" \
+  --add future-config \
+  --target future-config=shared/future.txt 2>&1) || status=$?
+locked_files=$(grep -c '^\[\[file\]\]' "${update_consumer}/.nautilus-engineering.lock")
+if [[ "$status" == 0 && "$output" == *"Updated 3 artifact(s)"* ]] &&
+  [[ $(< "${update_consumer}/shared/future.txt") == "future version 1" ]] &&
+  [[ "$locked_files" == 3 ]] &&
+  grep -Fq 'profiles = ["base"]' "${update_consumer}/.nautilus-engineering.lock"; then
+  printf 'ok   update adds an artifact without restating the locked selection\n'
+else
+  printf 'FAIL update add: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+status=0
+output=$(bash "$SYNC_SCRIPT" --source "$update_source" update \
+  --consumer "$update_consumer" --add future-config 2>&1) || status=$?
+if [[ "$status" == 2 && "$output" == *"artifact(s) already locked: future-config"* ]]; then
+  printf 'ok   update rejects adding an already locked artifact\n'
+else
+  printf 'FAIL update duplicate add: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+cat > "${update_source}/sync/manifest.toml" << 'TOML'
+version = 1
+repository = "https://github.com/nautechsystems/nautilus_engineering"
+lock_file = ".nautilus-engineering.lock"
+marker_file = ".nautilus-engineering.syncing"
+
+[[artifact]]
+id = "base-config"
+source = "config/base.txt"
+target = "config/base-moved.txt"
+executable = false
+profiles = ["base"]
+
+[[artifact]]
+id = "future-config"
+source = "config/future.txt"
+target = "config/future.txt"
+executable = false
+profiles = ["base"]
+TOML
+git -C "$update_source" add -A
+git -C "$update_source" commit --quiet -m source-v3
+locked_revision=$(awk -F '"' '$1 == "revision = " { print $2 }' \
+  "${update_consumer}/.nautilus-engineering.lock")
+status=0
+output=$(bash "$SYNC_SCRIPT" --source "$update_source" update \
+  --consumer "$update_consumer" 2>&1) || status=$?
+if [[ "$status" == 2 && "$output" == *"unknown artifact(s): direct-config"* ]] &&
+  [[ $(< "${update_consumer}/config/direct.txt") == "direct version 2" ]] &&
+  grep -Fq "revision = \"${locked_revision}\"" \
+    "${update_consumer}/.nautilus-engineering.lock"; then
+  printf 'ok   update rejects source manifests that cannot preserve the locked selection\n'
+else
+  printf 'FAIL update removed artifact: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
 full_source="${test_root}/full-source"
 full_consumer="${test_root}/full-consumer"
 mkdir -p "${full_source}/sync" "$full_consumer"
@@ -347,6 +524,23 @@ done < <(awk -F '"' '
   /^executable = true/ { print source }
 ' "${REPO_ROOT}/sync/manifest.toml")
 git -C "$full_source" commit --quiet -m source
+
+fixed_consumer="${test_root}/fixed-consumer"
+mkdir "$fixed_consumer"
+git -C "$fixed_consumer" init --quiet
+status=0
+output=$(bash "$SYNC_SCRIPT" --source "$full_source" vendor \
+  --consumer "$fixed_consumer" \
+  --artifact pre-commit-shell \
+  --target pre-commit-shell=shared/shell.yaml 2>&1) || status=$?
+if [[ "$status" == 2 && "$output" == *"target cannot be overridden"* ]] &&
+  [[ ! -e "${fixed_consumer}/.nautilus-engineering.syncing" ]]; then
+  printf 'ok   fixed-target artifacts reject incompatible consumer paths\n'
+else
+  printf 'FAIL fixed target: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
 git -C "$full_consumer" init --quiet
 artifact_count=$(awk '$0 == "[[artifact]]" { count++ } END { print count + 0 }' \
   "${REPO_ROOT}/sync/manifest.toml")
@@ -376,16 +570,33 @@ git -C "$precommit_consumer" init --quiet
 status=0
 output=$(bash "$SYNC_SCRIPT" --source "$full_source" vendor \
   --consumer "$precommit_consumer" --profile pre-commit 2>&1) || status=$?
-if [[ "$status" == 0 && "$output" == *"Vendored 10 artifact(s)"* ]] &&
+if [[ "$status" == 0 && "$output" == *"Vendored 11 artifact(s)"* ]] &&
   [[ -f "${precommit_consumer}/.markdownlint.jsonc" ]] &&
   [[ -f "${precommit_consumer}/.yamllint.yaml" ]] &&
   [[ -f "${precommit_consumer}/.taplo.toml" ]] &&
   [[ -f "${precommit_consumer}/scripts/check-markdown-tables.py" ]] &&
   [[ -f "${precommit_consumer}/scripts/check-nautilus-engineering-sync.bash" ]] &&
+  [[ -x "${precommit_consumer}/scripts/manage-nautilus-engineering-pre-commit.py" ]] &&
   [[ -f "${precommit_consumer}/.nautilus-engineering/pre-commit/sync.yaml" ]]; then
   printf 'ok   pre-commit profile includes every referenced shared input\n'
 else
   printf 'FAIL pre-commit profile dependencies: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+sync_consumer="${test_root}/sync-consumer"
+mkdir "$sync_consumer"
+git -C "$sync_consumer" init --quiet
+status=0
+output=$(bash "$SYNC_SCRIPT" --source "$full_source" vendor \
+  --consumer "$sync_consumer" --profile sync 2>&1) || status=$?
+if [[ "$status" == 0 && "$output" == *"Vendored 3 artifact(s)"* ]] &&
+  [[ -f "${sync_consumer}/.nautilus-engineering/pre-commit/sync.yaml" ]] &&
+  [[ -x "${sync_consumer}/scripts/check-nautilus-engineering-sync.bash" ]] &&
+  [[ -x "${sync_consumer}/scripts/manage-nautilus-engineering-pre-commit.py" ]]; then
+  printf 'ok   sync profile includes both unconditional hook dependencies\n'
+else
+  printf 'FAIL sync profile dependencies: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
 fi
 

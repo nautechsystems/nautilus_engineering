@@ -42,6 +42,7 @@ profiles = ["toml", "pre-commit"]
 id = "pre-commit-markdown"
 source = "pre-commit/markdown.yaml"
 target = ".nautilus-engineering/pre-commit/markdown.yaml"
+target_fixed = true
 executable = false
 profiles = ["pre-commit", "markdown"]
 
@@ -49,6 +50,7 @@ profiles = ["pre-commit", "markdown"]
 id = "pre-commit-shell"
 source = "pre-commit/shell.yaml"
 target = ".nautilus-engineering/pre-commit/shell.yaml"
+target_fixed = true
 executable = false
 profiles = ["pre-commit", "shell"]
 
@@ -56,6 +58,7 @@ profiles = ["pre-commit", "shell"]
 id = "pre-commit-toml"
 source = "pre-commit/toml.yaml"
 target = ".nautilus-engineering/pre-commit/toml.yaml"
+target_fixed = true
 executable = false
 profiles = ["pre-commit", "toml"]
 
@@ -63,6 +66,7 @@ profiles = ["pre-commit", "toml"]
 id = "pre-commit-yaml"
 source = "pre-commit/yaml.yaml"
 target = ".nautilus-engineering/pre-commit/yaml.yaml"
+target_fixed = true
 executable = false
 profiles = ["pre-commit", "yaml"]
 
@@ -70,7 +74,16 @@ profiles = ["pre-commit", "yaml"]
 id = "pre-commit-sync"
 source = "pre-commit/sync.yaml"
 target = ".nautilus-engineering/pre-commit/sync.yaml"
+target_fixed = true
 executable = false
+profiles = ["pre-commit", "sync"]
+
+[[artifact]]
+id = "pre-commit-manager"
+source = "sync/manage_pre_commit.py"
+target = "scripts/manage-nautilus-engineering-pre-commit.py"
+target_fixed = true
+executable = true
 profiles = ["pre-commit", "sync"]
 
 [[artifact]]
@@ -140,5 +153,6 @@ profiles = ["python", "tool-versions"]
 id = "sync-check"
 source = "sync/check-synced-files.bash"
 target = "scripts/check-nautilus-engineering-sync.bash"
+target_fixed = true
 executable = true
 profiles = ["sync", "pre-commit"]

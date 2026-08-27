@@ -22,6 +22,10 @@ Changes land here before they are adopted by consumer repositories. Adoption is 
 reviewable change in each consumer. This keeps a central edit from changing every repository at
 once and lets each repository retain local policy around the shared baseline.
 
+Do not commit a consumer lock until the manifest repository URL resolves to a repository that
+contains its pinned revision. A local-only source checkout does not give other contributors or CI a
+way to reproduce an adoption.
+
 ## Shared standards and configuration
 
 [`standards/markdown.md`](standards/markdown.md) defines the common Markdown baseline. It uses
@@ -46,9 +50,18 @@ TOML, and Markdown hooks. Pre-commit and prek do not include entries from other 
 so these definitions are inputs to a managed section in each consumer's `repos` list. Repository
 exclusions and local hooks remain outside that section.
 
-The initial sync command vendors these definitions but does not rewrite a consumer's
-`.pre-commit-config.yaml`. Managed-section rendering is a separate adoption step because it changes
-an existing configuration layout.
+The pre-commit profile vendors these definitions and the managed-section command. It does not
+rewrite a consumer's `.pre-commit-config.yaml` during vendoring because that changes an existing
+configuration layout. After reviewing the selected definitions, render the section with:
+
+```bash
+python3 scripts/manage-nautilus-engineering-pre-commit.py render
+```
+
+Rendering absorbs byte-identical unmanaged copies of selected definitions and stops when a local
+variant has the same repository or hook identity. Leave that variant unselected or reconcile its
+repository-specific policy before rendering. The shared sync definition installs unconditional
+staged checks for both the lock and the rendered section.
 
 ## Vendoring shared files
 
@@ -68,9 +81,30 @@ Vendor a profile into a local consumer checkout with:
 sync/sync.bash vendor --consumer ../consumer_repository --profile markdown
 ```
 
+Update an existing consumer without restating its adoption choices with:
+
+```bash
+sync/sync.bash update --consumer ../consumer_repository
+```
+
+The update command reads the current lock and preserves its complete artifact set, recorded
+profiles, and target paths. New artifacts added to a selected profile remain unadopted until an
+explicit `vendor` selection or `update --add`. Update stops if the current manifest no longer
+contains a locked artifact.
+
+Add one artifact to an existing adoption without restating the locked selection with:
+
+```bash
+sync/sync.bash update \
+  --consumer ../consumer_repository \
+  --add github-action-pin-check \
+  --target github-action-pin-check=scripts/ci/check-github-action-shas.sh
+```
+
 Use `--target ARTIFACT=PATH` when a repository needs to store a shared base at a different path and
 extend it from local configuration. Run the vendored checker in worktree mode during development
-or with `--staged` from pre-commit.
+or with `--staged` from pre-commit. Artifacts marked `target_fixed = true` reject target overrides
+because other managed files refer to their manifest paths.
 
 Vendoring rejects absolute paths, parent traversal, symlink traversal, Windows path aliases,
 special-file targets, duplicate targets, and uncommitted source artifacts. It stages the selected

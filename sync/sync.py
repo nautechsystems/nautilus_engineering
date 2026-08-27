@@ -36,6 +36,7 @@ class Artifact:
     id: str
     source: str
     target: str
+    target_fixed: bool
     executable: bool
     profiles: tuple[str, ...]
 
@@ -54,6 +55,18 @@ class SelectedFile:
     target: str
     content: bytes
     sha256: str
+
+
+@dataclass(frozen=True)
+class LockedFile:
+    artifact: str
+    path: str
+
+
+@dataclass(frozen=True)
+class LockedSelection:
+    profiles: tuple[str, ...]
+    files: tuple[LockedFile, ...]
 
 
 @dataclass(frozen=True)
@@ -149,7 +162,9 @@ def load_manifest(source: Path, revision: str) -> tuple[Manifest, bytes]:
     for index, entry in enumerate(raw_artifacts):
         if not isinstance(entry, dict):
             raise SyncError(f"artifact {index} must be a table")
-        if set(entry) != {"id", "source", "target", "executable", "profiles"}:
+        required_fields = {"id", "source", "target", "executable", "profiles"}
+        fields = set(entry)
+        if not required_fields <= fields or not fields <= required_fields | {"target_fixed"}:
             raise SyncError(f"artifact {index} has invalid fields")
         artifact_id = entry.get("id")
         if not isinstance(artifact_id, str) or re.fullmatch(r"[A-Za-z0-9-]+", artifact_id) is None:
@@ -162,6 +177,9 @@ def load_manifest(source: Path, revision: str) -> tuple[Manifest, bytes]:
         if target in targets:
             raise SyncError(f"duplicate default target: {target}")
         targets.add(target)
+        target_fixed = entry.get("target_fixed", False)
+        if not isinstance(target_fixed, bool):
+            raise SyncError(f"{artifact_id}.target_fixed must be true or false")
         executable = entry.get("executable")
         if not isinstance(executable, bool):
             raise SyncError(f"{artifact_id}.executable must be true or false")
@@ -177,7 +195,9 @@ def load_manifest(source: Path, revision: str) -> tuple[Manifest, bytes]:
             raise SyncError(f"{artifact_id}.profiles must be a non-empty array of profile ids")
         if len(set(profiles)) != len(profiles):
             raise SyncError(f"{artifact_id}.profiles contains a duplicate")
-        artifacts.append(Artifact(artifact_id, source_path, target, executable, tuple(profiles)))
+        artifacts.append(
+            Artifact(artifact_id, source_path, target, target_fixed, executable, tuple(profiles))
+        )
 
     return Manifest(repository, lock_file, marker_file, tuple(artifacts)), raw
 
@@ -252,6 +272,8 @@ def select_artifacts(
         if artifact.id not in selected_ids:
             continue
         target = overrides.get(artifact.id, artifact.target)
+        if artifact.target_fixed and target != artifact.target:
+            raise SyncError(f"artifact {artifact.id} target cannot be overridden: {target}")
         if PurePosixPath(target).parts[0].casefold().startswith(TEMP_PREFIX):
             raise SyncError(f"artifact {artifact.id} uses a reserved temporary path: {target}")
         for reserved_path in reserved:
@@ -310,9 +332,9 @@ def reject_symlink_path(root: Path, relative: str) -> None:
             raise SyncError(f"managed path parent is not a directory: {relative}")
 
 
-def load_previous_paths(lock_path: Path, manifest: Manifest) -> set[str]:
+def load_locked_selection(lock_path: Path, manifest: Manifest) -> LockedSelection | None:
     if not lock_path.exists():
-        return set()
+        return None
     if lock_path.is_symlink() or not lock_path.is_file():
         raise SyncError(f"existing lock is not a regular file: {lock_path}")
     try:
@@ -356,7 +378,7 @@ def load_previous_paths(lock_path: Path, manifest: Manifest) -> set[str]:
     files = data.get("file")
     if not isinstance(files, list) or not files:
         raise SyncError("existing sync lock has an invalid file list")
-    paths: set[str] = set()
+    locked_files: list[LockedFile] = []
     path_values: list[str] = []
     artifacts: set[str] = set()
     for entry in files:
@@ -390,8 +412,8 @@ def load_previous_paths(lock_path: Path, manifest: Manifest) -> set[str]:
             raise SyncError(f"existing sync lock contains overlapping paths: {path}")
         artifacts.add(artifact)
         path_values.append(path)
-        paths.add(path)
-    return paths
+        locked_files.append(LockedFile(artifact, path))
+    return LockedSelection(tuple(profiles), tuple(locked_files))
 
 
 def render_lock(
@@ -435,7 +457,10 @@ def install_files(
     process_lock = consumer / PROCESS_LOCK_FILE
     reject_symlink_path(consumer, manifest.lock_file)
     reject_symlink_path(consumer, manifest.marker_file)
-    previous_paths = load_previous_paths(lock_path, manifest)
+    locked_selection = load_locked_selection(lock_path, manifest)
+    previous_paths = (
+        {item.path for item in locked_selection.files} if locked_selection is not None else set()
+    )
 
     try:
         process_lock.mkdir(mode=0o700)
@@ -573,6 +598,55 @@ def command_vendor(
             print(f"  {path}")
 
 
+def command_update(
+    source: Path,
+    revision: str,
+    manifest: Manifest,
+    manifest_raw: bytes,
+    args: argparse.Namespace,
+) -> None:
+    consumer = consumer_root(args.consumer)
+    reject_symlink_path(consumer, manifest.lock_file)
+    locked_selection = load_locked_selection(consumer / manifest.lock_file, manifest)
+    if locked_selection is None:
+        raise SyncError(f"existing sync lock not found: {consumer / manifest.lock_file}")
+
+    additions = args.add
+    if len(set(additions)) != len(additions):
+        raise SyncError("duplicate --add artifact")
+    locked_ids = {item.artifact for item in locked_selection.files}
+    already_locked = sorted(locked_ids.intersection(additions))
+    if already_locked:
+        raise SyncError(f"artifact(s) already locked: {', '.join(already_locked)}")
+
+    added_targets = parse_target_overrides(args.target)
+    locked_overrides = sorted(locked_ids.intersection(added_targets))
+    if locked_overrides:
+        raise SyncError(f"update cannot change locked target paths: {', '.join(locked_overrides)}")
+
+    artifact_ids = [item.artifact for item in locked_selection.files] + additions
+    targets = {item.artifact: item.path for item in locked_selection.files}
+    targets.update(added_targets)
+    choices = select_artifacts(manifest, [], artifact_ids, targets)
+    selected: list[SelectedFile] = []
+    for artifact, target in choices:
+        content = committed_file(source, revision, artifact)
+        selected.append(
+            SelectedFile(artifact, target, content, hashlib.sha256(content).hexdigest())
+        )
+    lock_content = render_lock(
+        manifest,
+        revision,
+        hashlib.sha256(manifest_raw).hexdigest(),
+        list(locked_selection.profiles),
+        selected,
+    )
+    install_files(consumer, manifest, lock_content, selected)
+    print(f"Updated {len(selected)} artifact(s) from {revision}")
+    for item in selected:
+        print(f"  {item.artifact.id}: {item.target}")
+
+
 def build_parser(default_source: Path) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Vendor committed Nautilus engineering artifacts")
     parser.add_argument("--source", default=str(default_source), help="source repository checkout")
@@ -589,6 +663,25 @@ def build_parser(default_source: Path) -> argparse.ArgumentParser:
         metavar="ARTIFACT=PATH",
         help="override a selected artifact target",
     )
+    update = subparsers.add_parser(
+        "update",
+        help="update an existing lock and optionally add artifacts",
+    )
+    update.add_argument("--consumer", required=True, help="consumer repository root")
+    update.add_argument(
+        "--add",
+        action="append",
+        default=[],
+        metavar="ARTIFACT",
+        help="add an artifact while preserving the locked selection",
+    )
+    update.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        metavar="ARTIFACT=PATH",
+        help="override the target for an artifact named by --add",
+    )
     return parser
 
 
@@ -602,6 +695,8 @@ def main() -> int:
         manifest, raw = load_manifest(source, revision)
         if args.command == "list":
             command_list(manifest)
+        elif args.command == "update":
+            command_update(source, revision, manifest, raw, args)
         else:
             command_vendor(source, revision, manifest, raw, args)
     except (OSError, SyncError) as exc:
