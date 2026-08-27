@@ -167,10 +167,16 @@ jobs:
           .github/workflows/ci.yaml .pre-commit-config.yaml config/yamllint.yaml pre-commit/*.yaml
 
       - name: Check Markdown
-        run: >-
-          npx --yes "markdownlint-cli2@$(bash scripts/tool-version.sh markdownlint-cli2)"
-          --config config/markdownlint.jsonc
-          README.md standards/markdown.md pre-commit/README.md
+        run: |
+          markdown_file_output=$(git ls-files '*.md' | LC_ALL=C sort)
+          if [[ -z "${markdown_file_output}" ]]; then
+            echo "No tracked Markdown files found" >&2
+            exit 1
+          fi
+          mapfile -t markdown_files <<< "${markdown_file_output}"
+          npx --yes "markdownlint-cli2@$(bash scripts/tool-version.sh markdownlint-cli2)" \
+            --config config/markdownlint.jsonc \
+            "${markdown_files[@]}"
 
       - name: Check TOML
         run: |

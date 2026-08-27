@@ -561,8 +561,11 @@ def command_list(manifest: Manifest) -> None:
     for profile in profiles:
         print(f"  {profile}")
     print("\nArtifacts:")
+    target_width = max(len(artifact.target) for artifact in manifest.artifacts)
+    print(f"  {'ID':<28} {'Target':<{target_width}} Profiles")
     for artifact in manifest.artifacts:
-        print(f"  {artifact.id:<28} {artifact.target}")
+        memberships = ", ".join(artifact.profiles)
+        print(f"  {artifact.id:<28} {artifact.target:<{target_width}} {memberships}")
 
 
 def command_vendor(

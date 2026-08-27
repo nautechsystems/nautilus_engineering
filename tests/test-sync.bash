@@ -69,7 +69,9 @@ failures=0
 
 status=0
 output=$(bash "$SYNC_SCRIPT" --source "$source_repo" list) || status=$?
-if [[ "$status" == 0 && "$output" == *"base-config"* && "$output" == *"sync-check"* ]]; then
+if [[ "$status" == 0 && "$output" == *"base-config"* && "$output" == *"sync-check"* ]] &&
+  grep -Eq '^  base-config +config/base.txt +base$' <<< "$output" &&
+  grep -Eq '^  sync-check +scripts/check-nautilus-engineering-sync.bash +sync$' <<< "$output"; then
   printf 'ok   list reports committed profiles and artifacts\n'
 else
   printf 'FAIL list: exit %s\n%s\n' "$status" "$output" >&2
@@ -531,8 +533,8 @@ git -C "$fixed_consumer" init --quiet
 status=0
 output=$(bash "$SYNC_SCRIPT" --source "$full_source" vendor \
   --consumer "$fixed_consumer" \
-  --artifact pre-commit-shell \
-  --target pre-commit-shell=shared/shell.yaml 2>&1) || status=$?
+  --artifact markdown-table-check \
+  --target markdown-table-check=shared/check-markdown-tables.py 2>&1) || status=$?
 if [[ "$status" == 2 && "$output" == *"target cannot be overridden"* ]] &&
   [[ ! -e "${fixed_consumer}/.nautilus-engineering.syncing" ]]; then
   printf 'ok   fixed-target artifacts reject incompatible consumer paths\n'

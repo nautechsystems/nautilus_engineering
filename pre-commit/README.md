@@ -4,18 +4,22 @@ Each YAML file in this directory is a sequence of complete pre-commit repository
 entries are sources for a managed section of a consumer's `repos` list; they are not standalone
 `.pre-commit-config.yaml` files.
 
+See [`../docs/consumer-adoption.md`](../docs/consumer-adoption.md) for the complete consumer
+procedure, including profile selection, rendering, staged checks, and conflict handling.
+
 Pre-commit and prek do not support including repository entries from another file. Consumer
 adoption therefore copies selected definitions into a clearly marked managed section. Keep
 repository-specific hooks, exclusions, and top-level settings outside that section.
 
-After vendoring the selected definitions and the `pre-commit-manager` artifact, render the managed
-section with:
+Vendor the `pre-commit` profile for all shared pre-commit definitions. For a narrower adoption,
+pair the selected definition artifacts with the `sync` profile. Then render the managed section
+with:
 
 ```bash
 python3 scripts/manage-nautilus-engineering-pre-commit.py render
 ```
 
-The renderer absorbs byte-identical unmanaged definitions. It rejects selected definitions that
+The renderer removes byte-identical unmanaged definitions. It rejects selected definitions that
 have a local variant with the same repository or hook identity, so repository-specific changes are
 not overwritten as a side effect of adoption.
 

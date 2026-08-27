@@ -21,6 +21,7 @@ profiles = ["markdown", "pre-commit"]
 id = "markdown-table-check"
 source = "scripts/check-markdown-tables.py"
 target = "scripts/check-markdown-tables.py"
+target_fixed = true
 executable = false
 profiles = ["markdown", "pre-commit"]
 
