@@ -37,6 +37,8 @@ jobs:
       - name: Run focused checks
         shell: bash
         run: |
+          python3 -B scripts/check-tool-pins.py
+
           python_files=$(git ls-files --cached --others --exclude-standard -- '*.py' | LC_ALL=C sort)
           if [[ -z "${python_files}" ]]; then
             echo "No tracked Python files found" >&2

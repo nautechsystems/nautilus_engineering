@@ -25,9 +25,12 @@ mkdir -p \
   "$fake_bin"
 cp "${REPO_ROOT}/scripts/security-audit.py" "${fixture}/scripts/"
 
-cat > "${fixture}/.nautilus-engineering/tools.toml" << 'TOML'
+write_shared_catalog() {
+  local cargo_audit_version=$1
+
+  cat > "${fixture}/.nautilus-engineering/tools.toml" << TOML
 [cargo-audit]
-version = "0.22.2"
+version = "${cargo_audit_version}"
 
 [cargo-deny]
 version = "0.20.2"
@@ -44,6 +47,8 @@ version = "2.10.1"
 [osv-scanner]
 version = "2.5.1"
 TOML
+}
+write_shared_catalog 0.22.2
 touch \
   "${fixture}/Cargo.lock" \
   "${fixture}/Cargo.toml" \
@@ -77,7 +82,6 @@ lockfile = "fuzz/Cargo.lock"
 manifest = "Cargo.toml"
 config = "deny.toml"
 all-features = true
-locked = true
 
 [[cargo.deny]]
 manifest = "fuzz/Cargo.toml"
@@ -87,7 +91,6 @@ checks = ["advisories", "bans"]
 [[cargo.vet]]
 manifest = "Cargo.toml"
 store = "supply-chain"
-locked = true
 
 [[cargo.vet]]
 manifest = "fuzz/Cargo.toml"
@@ -145,7 +148,13 @@ cat > "${fake_bin}/npm" << 'FAKE_NPM'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'npm|%s|%s\n' "$PWD" "$*" >> "${FAKE_COMMAND_LOG:?}"
-if [[ "$*" == "audit" && "${FAKE_NPM_FULL_FAIL:-0}" == 1 ]]; then
+if [[ "$*" == "--version" ]]; then
+  if [[ "${FAKE_NPM_INVALID_UTF8:-0}" == 1 ]]; then
+    printf '\377\n'
+  else
+    printf '12.0.2\n'
+  fi
+elif [[ "$*" == "audit" && "${FAKE_NPM_FULL_FAIL:-0}" == 1 ]]; then
   echo "development-only finding" >&2
   exit 1
 fi
@@ -156,6 +165,7 @@ set -euo pipefail
 printf 'osv|%s|%s\n' "$PWD" "$*" >> "${FAKE_COMMAND_LOG:?}"
 if [[ "$*" == "--version" ]]; then
   printf 'osv-scanner version 2.5.1\n'
+  printf 'osv-scalibr version 0.5.2\n'
 else
   printf 'OSV scan complete\n'
 fi
@@ -181,10 +191,11 @@ expected_commands=(
   "cargo|${fixture}|audit --color never --file Cargo.lock --ignore RUSTSEC-2026-0001 --deny warnings"
   "cargo|${fixture}|audit --color never --file fuzz/Cargo.lock"
   "cargo|${fixture}|deny --manifest-path Cargo.toml --config deny.toml --all-features --locked check advisories licenses sources bans"
-  "cargo|${fixture}|deny --manifest-path fuzz/Cargo.toml --config fuzz/deny.toml check advisories bans"
+  "cargo|${fixture}|deny --manifest-path fuzz/Cargo.toml --config fuzz/deny.toml --locked check advisories bans"
   "cargo|${fixture}|vet --manifest-path Cargo.toml --store-path supply-chain --locked"
-  "cargo|${fixture}|vet --manifest-path fuzz/Cargo.toml --store-path fuzz/.supply-chain"
+  "cargo|${fixture}|vet --manifest-path fuzz/Cargo.toml --store-path fuzz/.supply-chain --locked"
   "uv|${fixture}|export --project python --python 3.12 --no-emit-local --frozen --all-extras --group dev --group test"
+  "npm|${fixture}|--version"
   "npm|${fixture}/web|audit --omit=dev"
   "npm|${fixture}/web|audit"
   "npm|${fixture}/web|audit signatures --min-release-age=0"
@@ -225,6 +236,62 @@ if [[ "$status" == 1 && "$output" == *"cargo-audit version mismatch"* ]] &&
   printf 'ok   tool mismatch stops before dependency auditing\n'
 else
   printf 'FAIL version mismatch: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+for version in 0.22.2-alpha 0.22.2-beta.1 0.22.2-rc.1 0.22.2+local 0.22.2.1; do
+  : > "$command_log"
+  status=0
+  output=$(FAKE_CARGO_AUDIT_VERSION="$version" run_audit check-tools 2>&1) || status=$?
+  if [[ "$status" == 1 && "$output" == *"cargo-audit version mismatch"* &&
+    "$output" == *"$version"* ]] &&
+    ! grep -Fq 'audit --color' "$command_log"; then
+    printf 'ok   reported version %s does not satisfy the stable pin\n' "$version"
+  else
+    printf 'FAIL reported version %s: exit %s\n%s\n' \
+      "$version" "$status" "$output" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+for version in 0.22.2-alpha 0.22.2-beta.1 0.22.2-rc.1 0.22.2+local 0.22.2.1; do
+  write_shared_catalog "$version"
+  : > "$command_log"
+  status=0
+  output=$(run_audit check-tools 2>&1) || status=$?
+  if [[ "$status" == 1 &&
+    "$output" == *"[cargo-audit].version must be a stable X.Y.Z release"* ]] &&
+    [[ ! -s "$command_log" ]]; then
+    printf 'ok   shared catalog rejects unstable pin %s\n' "$version"
+  else
+    printf 'FAIL unstable shared pin %s: exit %s\n%s\n' \
+      "$version" "$status" "$output" >&2
+    failures=$((failures + 1))
+  fi
+done
+write_shared_catalog 0.22.2
+
+status=0
+output=$(FAKE_NPM_INVALID_UTF8=1 run_audit check-tools 2>&1) || status=$?
+if [[ "$status" == 0 && "$output" == *"All required supply-chain tools"* ]]; then
+  printf 'ok   undecodable tool output cannot escape the audit error boundary\n'
+else
+  printf 'FAIL tool output decoding: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+cp "${fake_bin}/npm" "${fake_bin}/npm.good"
+printf 'invalid executable\n' > "${fake_bin}/npm"
+chmod +x "${fake_bin}/npm"
+: > "$command_log"
+status=0
+output=$(run_audit check-tools 2>&1) || status=$?
+mv "${fake_bin}/npm.good" "${fake_bin}/npm"
+if [[ "$status" == 1 && "$output" == *"could not execute"* &&
+  "$output" != *"Traceback"* ]]; then
+  printf 'ok   process launch failure reports a clean audit error\n'
+else
+  printf 'FAIL process launch error: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
 fi
 

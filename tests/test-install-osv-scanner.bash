@@ -10,10 +10,15 @@ fake_bin="${test_root}/fake-bin"
 mkdir -p "${fixture}/scripts" "$fake_bin"
 cp "${REPO_ROOT}/scripts/install-osv-scanner.sh" "${fixture}/scripts/"
 cp "${REPO_ROOT}/scripts/tool-version.sh" "${fixture}/scripts/"
-cat > "${fixture}/tools.toml" << 'TOML'
+write_catalog() {
+  local version=$1
+
+  cat > "${fixture}/tools.toml" << TOML
 [osv-scanner]
-version = "2.5.0"
+version = "${version}"
 TOML
+}
+write_catalog 2.5.0
 
 cat > "${fake_bin}/uname" << 'FAKE_UNAME'
 #!/usr/bin/env bash
@@ -106,6 +111,21 @@ else
   failures=$((failures + 1))
 fi
 
+explicit_dir="${test_root}/explicit"
+mkdir -p "$explicit_dir"
+status=0
+output=$(OSV_SCANNER_PREFIX="$explicit_dir" \
+  FAKE_CURL_LOG="${test_root}/curl.log" \
+  PATH="${install_dir}:${explicit_dir}:${fake_bin}:${PATH}" \
+  bash "${fixture}/scripts/install-osv-scanner.sh" 2>&1) || status=$?
+if [[ "$status" == 0 && -x "${explicit_dir}/osv-scanner" ]] &&
+  [[ $("${explicit_dir}/osv-scanner" --version) == "osv-scanner version 2.5.0" ]]; then
+  printf 'ok   explicit prefix is not bypassed by a matching PATH binary\n'
+else
+  printf 'FAIL explicit prefix: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
 mismatch_dir="${test_root}/mismatch"
 mkdir -p "$mismatch_dir"
 : > "${test_root}/curl.log"
@@ -135,12 +155,64 @@ fi
 
 wrong_version_dir="${test_root}/wrong-version"
 mkdir -p "$wrong_version_dir"
+printf '#!/usr/bin/env bash\necho "osv-scanner version 0.9.0"\n' \
+  > "${wrong_version_dir}/osv-scanner"
+chmod +x "${wrong_version_dir}/osv-scanner"
 status=0
 output=$(run_install "$wrong_version_dir" env FAKE_ASSET_VERSION=1.0.0) || status=$?
-if [[ "$status" == 1 && "$output" == *"installed target version mismatch"* ]]; then
-  printf 'ok   downloaded target must report the required version\n'
+if [[ "$status" == 1 && "$output" == *"downloaded asset version mismatch"* ]] &&
+  [[ $("${wrong_version_dir}/osv-scanner" --version) == "osv-scanner version 0.9.0" ]]; then
+  printf 'ok   wrong asset version leaves the installed target unchanged\n'
 else
   printf 'FAIL target version: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+for version in 2.5.0-alpha 2.5.0-beta.1 2.5.0-rc.1 2.5.0+local 2.5.0.1; do
+  suffix_dir="${test_root}/$(printf '%s' "$version" | tr '.+' '--')"
+  mkdir -p "$suffix_dir"
+  printf '#!/usr/bin/env bash\necho "osv-scanner version 0.9.0"\n' \
+    > "${suffix_dir}/osv-scanner"
+  chmod +x "${suffix_dir}/osv-scanner"
+  status=0
+  output=$(run_install "$suffix_dir" env FAKE_ASSET_VERSION="$version") || status=$?
+  if [[ "$status" == 1 && "$output" == *"downloaded asset version mismatch"* ]] &&
+    [[ $("${suffix_dir}/osv-scanner" --version) == "osv-scanner version 0.9.0" ]]; then
+    printf 'ok   asset version %s does not satisfy the stable pin\n' "$version"
+  else
+    printf 'FAIL asset version %s: exit %s\n%s\n' "$version" "$status" "$output" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+relative_root="${test_root}/relative"
+mkdir -p "$relative_root"
+status=0
+output=$(cd "$relative_root" &&
+  OSV_SCANNER_PREFIX=relative-bin \
+    FAKE_CURL_LOG="${test_root}/curl.log" \
+    PATH="${relative_root}/relative-bin:${fake_bin}:${PATH}" \
+    bash "${fixture}/scripts/install-osv-scanner.sh" 2>&1) || status=$?
+if [[ "$status" == 0 && -x "${relative_root}/relative-bin/osv-scanner" ]]; then
+  printf 'ok   relative install prefix resolves before temporary-directory use\n'
+else
+  printf 'FAIL relative prefix: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+cat > "${fake_bin}/mkdir" << 'FAKE_MKDIR'
+#!/usr/bin/env bash
+exit 0
+FAKE_MKDIR
+chmod +x "${fake_bin}/mkdir"
+unresolved_dir="${test_root}/not-created"
+status=0
+output=$(run_install "$unresolved_dir" env) || status=$?
+rm "${fake_bin}/mkdir"
+if [[ "$status" == 1 && "$output" == *"could not create install directory: $unresolved_dir"* ]]; then
+  printf 'ok   unresolved install directory reports the requested path\n'
+else
+  printf 'FAIL unresolved install directory: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
 fi
 
@@ -180,6 +252,19 @@ if [[ "$status" == 1 && "$output" == *"Another osv-scanner binary may be shadowi
   printf 'ok   shadowed installed binary is reported\n'
 else
   printf 'FAIL shadowed binary: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+write_catalog 2.5.0-rc.1
+: > "${test_root}/curl.log"
+status=0
+output=$(run_install "${test_root}/unstable-pin" env) || status=$?
+if [[ "$status" == 1 &&
+  "$output" == *"version pin must be a stable X.Y.Z release: 2.5.0-rc.1"* ]] &&
+  [[ ! -s "${test_root}/curl.log" ]]; then
+  printf 'ok   unstable catalog pin fails before download\n'
+else
+  printf 'FAIL unstable catalog pin: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
 fi
 

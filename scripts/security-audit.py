@@ -30,6 +30,14 @@ __all__: tuple[str, ...] = ()
 ADVISORY_ID = re.compile(r"^RUSTSEC-\d{4}-\d{4}$")
 GROUP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 PYTHON_VERSION = re.compile(r"^\d+\.\d+$")
+REPORTED_VERSION = re.compile(
+    r"(?<![0-9A-Za-z.])"
+    r"([0-9]+\.[0-9]+\.[0-9]+"
+    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)"
+    r"(?![0-9A-Za-z.+-])",
+)
+STABLE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 VULNERABILITY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 CARGO_AUDIT_DENIES = frozenset({"unmaintained", "unsound", "warnings", "yanked"})
 CARGO_DENY_CHECKS = frozenset({"advisories", "bans", "licenses", "sources"})
@@ -53,7 +61,6 @@ class CargoDeny:
     manifest: Path
     config: Path | None
     all_features: bool
-    locked: bool
     checks: tuple[str, ...]
 
 
@@ -61,7 +68,6 @@ class CargoDeny:
 class CargoVet:
     manifest: Path
     store: Path | None
-    locked: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,7 +250,7 @@ def _parse_cargo_denies(root: Path, cargo: dict[str, object]) -> tuple[CargoDeny
         context = f"cargo.deny[{index}]"
         _reject_unknown(
             table,
-            {"all-features", "checks", "config", "locked", "manifest"},
+            {"all-features", "checks", "config", "manifest"},
             context,
         )
         checks = _string_list(
@@ -265,7 +271,6 @@ def _parse_cargo_denies(root: Path, cargo: dict[str, object]) -> tuple[CargoDeny
                 ),
                 config=_optional_path(root, table, "config", context),
                 all_features=_boolean(table, "all-features", context, default=False),
-                locked=_boolean(table, "locked", context, default=False),
                 checks=checks,
             ),
         )
@@ -276,7 +281,7 @@ def _parse_cargo_vets(root: Path, cargo: dict[str, object]) -> tuple[CargoVet, .
     audits = []
     for index, table in enumerate(_table_list(cargo, "vet", "cargo")):
         context = f"cargo.vet[{index}]"
-        _reject_unknown(table, {"locked", "manifest", "store"}, context)
+        _reject_unknown(table, {"manifest", "store"}, context)
         audits.append(
             CargoVet(
                 manifest=_path(
@@ -285,7 +290,6 @@ def _parse_cargo_vets(root: Path, cargo: dict[str, object]) -> tuple[CargoVet, .
                     f"{context}.manifest",
                 ),
                 store=_optional_path(root, table, "store", context, directory=True),
-                locked=_boolean(table, "locked", context, default=False),
             ),
         )
     return tuple(audits)
@@ -439,6 +443,10 @@ def _read_versions(root: Path, names: set[str]) -> dict[str, str]:
         version = section.get("version")
         if not isinstance(version, str) or not version:
             raise AuditError(f"{catalog_path}: [{name}].version must be a non-empty string")
+        if STABLE_VERSION.fullmatch(version) is None:
+            raise AuditError(
+                f"{catalog_path}: [{name}].version must be a stable X.Y.Z release",
+            )
         versions[name] = version
     return versions
 
@@ -456,22 +464,26 @@ def _run_process(
     root: Path,
     cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603
-        args,
-        cwd=cwd or root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        return subprocess.run(  # noqa: S603
+            args,
+            cwd=cwd or root,
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError as error:
+        raise AuditError(f"could not execute {args[0]}: {error}") from error
 
 
 def _output(result: subprocess.CompletedProcess[str]) -> str:
     return "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
 
 
-def _contains_version(output: str, expected: str) -> bool:
-    pattern = rf"(?<![0-9A-Za-z.]){re.escape(expected)}(?![0-9A-Za-z.])"
-    return re.search(pattern, output) is not None
+def _reported_version(output: str) -> str | None:
+    match = REPORTED_VERSION.search(output)
+    return match.group(1) if match is not None else None
 
 
 def _check_version(context: Context, label: str, args: list[str], expected: str) -> None:
@@ -479,8 +491,9 @@ def _check_version(context: Context, label: str, args: list[str], expected: str)
     output = _output(result)
     if result.returncode != 0:
         raise AuditError(f"could not read {label} version:\n{output}")
-    if not _contains_version(output, expected):
-        found = output or "no output"
+    reported = _reported_version(output)
+    if reported != expected:
+        found = reported or output or "no output"
         raise AuditError(f"{label} version mismatch: expected {expected}, found {found}")
     _write(f"ok   {label} {expected}")
 
@@ -539,7 +552,12 @@ def _prepare_context(root: Path, policy: AuditPolicy) -> Context:  # noqa: C901,
             versions["pip-audit"],
         )
     if policy.node_audits:
-        _write("ok   npm is installed")
+        npm = executables["npm"]
+        result = _run_process([npm, "--version"], root=root)
+        if result.returncode != 0:
+            output = _output(result) or "no output"
+            raise AuditError(f"could not run npm: {output}")
+        _write("ok   npm is available")
     if policy.osv is not None:
         osv = executables["osv-scanner"]
         _check_version(context, "osv-scanner", [osv, "--version"], versions["osv-scanner"])
@@ -567,7 +585,7 @@ def _run_step(
 
 
 # Each Cargo command is assembled beside its typed policy to keep flags and paths auditable
-def _run_cargo(context: Context, policy: AuditPolicy) -> list[str]:  # noqa: C901, PLR0912
+def _run_cargo(context: Context, policy: AuditPolicy) -> list[str]:  # noqa: C901
     failures = []
     cargo = context.executables.get("cargo")
     if cargo is None:
@@ -590,8 +608,7 @@ def _run_cargo(context: Context, policy: AuditPolicy) -> list[str]:  # noqa: C90
             args.extend(("--config", audit.config.as_posix()))
         if audit.all_features:
             args.append("--all-features")
-        if audit.locked:
-            args.append("--locked")
+        args.append("--locked")
         args.extend(("check", *audit.checks))
         try:
             _run_step(context, label, args)
@@ -602,8 +619,7 @@ def _run_cargo(context: Context, policy: AuditPolicy) -> list[str]:  # noqa: C90
         args = [cargo, "vet", "--manifest-path", audit.manifest.as_posix()]
         if audit.store is not None:
             args.extend(("--store-path", audit.store.as_posix()))
-        if audit.locked:
-            args.append("--locked")
+        args.append("--locked")
         try:
             _run_step(context, label, args)
         except AuditError as error:

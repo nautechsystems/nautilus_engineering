@@ -10,7 +10,10 @@ mkdir -p "${test_root}/.github/workflows" "${test_root}/pre-commit" "${test_root
 cp "${REPO_ROOT}/scripts/check-tool-pins.py" "${test_root}/scripts/"
 cp "${REPO_ROOT}/scripts/tool-version.sh" "${test_root}/scripts/"
 
-cat > "${test_root}/tools.toml" << 'TOML'
+write_catalog() {
+  local cargo_audit_version=$1
+
+  cat > "${test_root}/tools.toml" << TOML
 [alpha]
 version = "1.2.3"
 ci = true
@@ -18,11 +21,15 @@ pre-commit-repository = "https://example.com/alpha"
 pre-commit-revision = "v{version}"
 pre-commit-fragment = "pre-commit/alpha.yaml"
 
+[cargo-audit]
+version = "${cargo_audit_version}"
+
 [beta]
 version = "2.0.0"
 pre-commit-repository = "https://example.com/beta"
 pre-commit-revision = "release-{version}"
 TOML
+}
 
 write_config() {
   local alpha_revision=$1
@@ -94,7 +101,15 @@ expect_failure() {
 write_config v1.2.3
 write_fragment
 write_ci
+write_catalog 0.22.2
 expect_success "matching catalog, hooks, fragments, and CI"
+
+for version in 0.22.2-alpha 0.22.2-beta.1 0.22.2-rc.1 0.22.2+local 0.22.2.1; do
+  write_catalog "$version"
+  expect_failure "unstable security tool pin $version" \
+    "[cargo-audit].version must be a stable X.Y.Z release"
+done
+write_catalog 0.22.2
 
 write_config v1.2.4
 expect_failure "mismatched hook revision" "uses v1.2.4, expected v1.2.3"
@@ -113,6 +128,11 @@ cat > "${test_root}/pre-commit/alpha.yaml" << 'YAML'
     - id: alpha
 YAML
 expect_failure "missing fragment entry" "missing tools.toml [alpha] repository"
+
+cat >> "${test_root}/tools.toml" << 'TOML'
+unexpected = true
+TOML
+expect_failure "unknown catalog field" "[beta] has unknown field(s): unexpected"
 
 if ((failures > 0)); then
   printf '\n%s tool pin test(s) failed\n' "$failures" >&2

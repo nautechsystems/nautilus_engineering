@@ -94,11 +94,14 @@ make pre-commit
 The Makefile runs the exact cataloged prek release through uv. Nautilus Engineering has no
 dependency graph to audit. Its test suite instead exercises the shared supply-chain runner,
 installer, exact version checks, policy validation, and secondary dependency paths with controlled
-fixtures. Consumer pre-flight targets run their own unit tests and configured dependency audits.
+fixtures. Every maintained script has behavioral coverage, and CI runs every tracked
+`tests/test-*.bash` file. Consumer pre-flight targets run their own unit tests and configured
+dependency audits.
 
 CI runs the functional checks on Linux, macOS, and Windows. Linux also runs the shell, Python, YAML,
-Markdown, and TOML linters. GitHub Action references are checked for source comments and full commit
-SHAs that match their named release tags.
+Markdown, and TOML linters. CI also validates the central tool catalog against its pre-commit and
+workflow consumers. GitHub Action references are checked for source comments and full commit SHAs
+that match their named release tags.
 
 ## License
 

@@ -24,6 +24,19 @@ __all__: tuple[str, ...] = ()
 
 REPO_LINE = re.compile(r"^\s*-\s+repo:\s+([^\s#]+)")
 REV_LINE = re.compile(r"^\s+rev:\s+([^\s#]+)")
+STABLE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+SECURITY_TOOLS = frozenset(
+    {"cargo-audit", "cargo-deny", "cargo-vet", "osv-scanner", "pip-audit", "uv"},
+)
+TOOL_FIELDS = frozenset(
+    {
+        "ci",
+        "pre-commit-fragment",
+        "pre-commit-repository",
+        "pre-commit-revision",
+        "version",
+    },
+)
 
 
 class PinError(Exception):
@@ -53,6 +66,10 @@ def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912
         if not isinstance(values, dict):
             raise PinError(f"{path}: [{name}] must be a table")
 
+        unknown = sorted(values.keys() - TOOL_FIELDS)
+        if unknown:
+            raise PinError(f"{path}: [{name}] has unknown field(s): {', '.join(unknown)}")
+
         version = values.get("version")
         ci = values.get("ci", False)
         repository = values.get("pre-commit-repository")
@@ -60,6 +77,8 @@ def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912
         fragment_value = values.get("pre-commit-fragment")
         if not isinstance(version, str) or not version:
             raise PinError(f"{path}: [{name}].version must be a non-empty string")
+        if name in SECURITY_TOOLS and STABLE_VERSION.fullmatch(version) is None:
+            raise PinError(f"{path}: [{name}].version must be a stable X.Y.Z release")
         if not isinstance(ci, bool):
             raise PinError(f"{path}: [{name}].ci must be a Boolean")
         if (repository is None) != (template is None):

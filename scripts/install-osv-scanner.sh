@@ -5,12 +5,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OSV_SCANNER_VERSION="$(bash "$SCRIPT_DIR/tool-version.sh" osv-scanner)"
+STABLE_VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+$'
+VERSION_PATTERN='[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
+VERSION_OUTPUT_PATTERN="(^|[^0-9A-Za-z.])(${VERSION_PATTERN})([^0-9A-Za-z.+-]|$)"
 
 INSTALL_DIR="${OSV_SCANNER_PREFIX:-$HOME/.cargo/bin}"
 INSTALL_ATTEMPTS="${INSTALL_ATTEMPTS:-5}"
 CURL_RETRIES="${CURL_RETRIES:-5}"
 CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-20}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-300}"
+
+if ! [[ "$OSV_SCANNER_VERSION" =~ $STABLE_VERSION_PATTERN ]]; then
+  echo "Error: osv-scanner version pin must be a stable X.Y.Z release: $OSV_SCANNER_VERSION" >&2
+  exit 1
+fi
 
 for setting in INSTALL_ATTEMPTS CURL_RETRIES CURL_CONNECT_TIMEOUT CURL_MAX_TIME; do
   value=${!setting}
@@ -25,9 +33,12 @@ if [ "$INSTALL_ATTEMPTS" -gt 10 ]; then
 fi
 
 get_version() {
-  local executable=$1
+  local executable=$1 output=""
 
-  "$executable" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo ""
+  output=$("$executable" --version 2>&1) || true
+  if [[ "$output" =~ $VERSION_OUTPUT_PATTERN ]]; then
+    printf '%s' "${BASH_REMATCH[2]}"
+  fi
 }
 
 download_file() {
@@ -68,7 +79,7 @@ verify_checksum() {
   fi
 }
 
-if command -v osv-scanner > /dev/null 2>&1; then
+if [[ -z "${OSV_SCANNER_PREFIX:-}" ]] && command -v osv-scanner > /dev/null 2>&1; then
   INSTALLED_VERSION="$(get_version "$(command -v osv-scanner)")"
   if [[ "$INSTALLED_VERSION" == "$OSV_SCANNER_VERSION" ]]; then
     echo "osv-scanner $OSV_SCANNER_VERSION is already installed."
@@ -106,6 +117,26 @@ BASE_URL="https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER
 
 echo "Installing osv-scanner ${OSV_SCANNER_VERSION} for ${OS}/${ARCH}..."
 
+INSTALL_DIR_REQUESTED="$INSTALL_DIR"
+if ! mkdir -p "$INSTALL_DIR_REQUESTED" ||
+  ! INSTALL_DIR=$(cd "$INSTALL_DIR_REQUESTED" && pwd -P); then
+  echo "Error: could not create install directory: $INSTALL_DIR_REQUESTED" >&2
+  exit 1
+fi
+
+TARGET="${INSTALL_DIR}/osv-scanner${EXT}"
+if [[ -L "$TARGET" || (-e "$TARGET" && ! -f "$TARGET") ]]; then
+  echo "Error: install target is not a regular file: $TARGET" >&2
+  exit 1
+fi
+if [[ -n "${OSV_SCANNER_PREFIX:-}" && -f "$TARGET" ]]; then
+  TARGET_VERSION="$(get_version "$TARGET")"
+  if [[ "$TARGET_VERSION" == "$OSV_SCANNER_VERSION" ]]; then
+    echo "osv-scanner $OSV_SCANNER_VERSION is already installed at $TARGET."
+    exit 0
+  fi
+fi
+
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
 cd "$TEMP_DIR"
@@ -140,24 +171,22 @@ if [ "$verified" != "true" ]; then
   exit 1
 fi
 
-mkdir -p "$INSTALL_DIR"
-TARGET="${INSTALL_DIR}/osv-scanner${EXT}"
-if [[ -L "$TARGET" || (-e "$TARGET" && ! -f "$TARGET") ]]; then
-  echo "Error: install target is not a regular file: $TARGET" >&2
+if ! chmod +x "$ASSET"; then
+  echo "Error: could not make downloaded asset executable: $ASSET" >&2
   exit 1
 fi
+ASSET_VERSION="$(get_version "$TEMP_DIR/$ASSET")"
+if [[ "$ASSET_VERSION" != "$OSV_SCANNER_VERSION" ]]; then
+  echo "Error: downloaded asset version mismatch" >&2
+  echo "  Required: $OSV_SCANNER_VERSION" >&2
+  echo "  Found:    ${ASSET_VERSION:-no version output}" >&2
+  exit 1
+fi
+
 TARGET_TEMP=$(mktemp "${INSTALL_DIR}/.osv-scanner.XXXXXX")
 if ! cp "$ASSET" "$TARGET_TEMP" || ! chmod +x "$TARGET_TEMP" || ! mv -f "$TARGET_TEMP" "$TARGET"; then
   rm -f "$TARGET_TEMP"
   echo "Error: could not install osv-scanner to $TARGET" >&2
-  exit 1
-fi
-
-TARGET_VERSION="$(get_version "$TARGET")"
-if [[ "$TARGET_VERSION" != "$OSV_SCANNER_VERSION" ]]; then
-  echo "Error: installed target version mismatch" >&2
-  echo "  Required: $OSV_SCANNER_VERSION" >&2
-  echo "  Found:    ${TARGET_VERSION:-no version output} (at $TARGET)" >&2
   exit 1
 fi
 

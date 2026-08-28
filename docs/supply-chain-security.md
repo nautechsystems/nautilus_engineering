@@ -40,13 +40,11 @@ report = false
 manifest = "Cargo.toml"
 config = "deny.toml"
 all-features = true
-locked = true
 checks = ["advisories", "licenses", "sources", "bans"]
 
 [[cargo.vet]]
 manifest = "Cargo.toml"
 store = "supply-chain"
-locked = true
 
 [[python]]
 project = "python"
@@ -80,12 +78,14 @@ Set `report = true` to print successful scanner output; findings still fail the 
 ### Cargo deny
 
 Each `[[cargo.deny]]` entry requires `manifest`. The optional fields are `config`, `all-features`,
-`locked`, and `checks`. Checks default to `advisories`, `licenses`, `sources`, and `bans`.
+and `checks`. Checks default to `advisories`, `licenses`, `sources`, and `bans`. The runner always
+uses `--locked`, so stale dependency resolution fails instead of changing the Cargo lockfile.
 
 ### Cargo vet
 
 Each `[[cargo.vet]]` entry requires `manifest`. Set `store` when the supply-chain directory is not
-the default for that workspace. `locked = true` prevents the audit from changing its store.
+the default for that workspace. The runner always uses `--locked`, so missing or inconsistent local
+imported-audit state fails. Refresh and review remote imports outside the audit gate.
 
 ### Python
 
