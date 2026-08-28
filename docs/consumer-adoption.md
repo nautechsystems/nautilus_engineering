@@ -18,7 +18,7 @@ their source and hashes in `.nautilus-engineering.lock`.
 
 Consumers that render shared pre-commit definitions need `.pre-commit-config.yaml` with one
 top-level `repos:` key. Keep repository-specific hooks, exclusions, and top-level settings outside
-the managed section.
+the managed regions.
 
 Before the first sync, add its transient state to the consumer's `.gitignore`:
 
@@ -30,6 +30,30 @@ Before the first sync, add its transient state to the consumer's `.gitignore`:
 
 The ignore rules prevent accidental staging of recovery data. The checker still fails while a sync
 marker or process lock exists.
+
+## Choose a pre-commit layout
+
+Without managed markers, the renderer creates one section immediately after `repos:`. Existing
+consumers can retain that layout. To run the sync checks first and place other shared definitions
+after consumer-owned checks, add both split marker pairs before rendering:
+
+```yaml
+repos:
+  # nautilus-engineering: sync begin
+  # nautilus-engineering: sync end
+
+  # Keep consumer-owned entries here.
+
+  # nautilus-engineering: hooks begin
+  # nautilus-engineering: hooks end
+```
+
+The renderer keeps the sync region directly after `repos:` and leaves the hooks region at its
+marked position. The split layout requires the `pre-commit-sync` artifact. Use either the single
+section or both split regions; partial or mixed marker layouts fail validation.
+
+To migrate an existing consumer, delete the legacy region from its `begin` marker through its `end`
+marker, add both split marker pairs at their intended positions, then run the renderer.
 
 ## Choose a selection
 
@@ -131,9 +155,10 @@ If the Markdown or YAML policy must differ, vendor its shared baseline to anothe
 configuration applies because Taplo does not support cross-file inheritance.
 
 Render the sync hooks, run both checker modes from the preceding section, and keep the remaining
-pre-commit definitions local. Move another definition into the managed section only after its local
-variant has been reconciled. This preserves NautilusTrader's Markdown exclusions and additional
-local hooks.
+pre-commit definitions local. Use the split layout when sync checks must run first while shared
+tool definitions follow NautilusTrader's general checks. Move another definition into the managed
+hooks region only after its local variant has been reconciled. This preserves NautilusTrader's
+Markdown exclusions and additional local hooks.
 
 NautilusTrader uses a different target for the written Markdown standard. Add it to an existing
 lock with:

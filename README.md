@@ -26,7 +26,7 @@ lets each repository adopt them on its own schedule.
 | ------------- | ------------------------------------------------------------------------- |
 | `standards/`  | Written standards, including the shared Markdown baseline                 |
 | `config/`     | Baseline configuration for markdownlint, yamllint, and Taplo              |
-| `pre-commit/` | Repository entries rendered into a managed consumer section               |
+| `pre-commit/` | Repository entries rendered into managed consumer sections                |
 | `scripts/`    | Portable checks, version readers, installers, and dependency update tools |
 | `sync/`       | The artifact catalog, vendoring command, checker, and section renderer    |
 | `tests/`      | Focused tests for shared behavior                                         |
@@ -58,7 +58,7 @@ Shared files provide a baseline rather than a complete repository policy:
 - Consumer `tools.toml` and Cargo metadata own pins for tools used by only that repository.
 - Consumer `rust-toolchain.toml` files keep independent compiler pins.
 - Repository-specific pre-commit hooks, exclusions, and top-level settings remain outside the
-  managed section.
+  managed sections.
 - Makefiles and workflows remain local and call shared scripts where the behavior is reusable.
 - Advisory exceptions, generated-file rules, release jobs, and deployment policy remain local.
 
