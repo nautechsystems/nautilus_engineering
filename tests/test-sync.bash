@@ -533,8 +533,12 @@ git -C "$fixed_consumer" init --quiet
 fixed_target_failed=false
 for fixed_artifact in \
   markdown-table-check \
+  cargo-tool-version \
   cargo-cooldown-check \
-  cargo-dependency-update; do
+  cargo-dependency-update \
+  osv-scanner-install \
+  tool-version \
+  uv-version; do
   status=0
   output=$(bash "$SYNC_SCRIPT" --source "$full_source" vendor \
     --consumer "$fixed_consumer" \

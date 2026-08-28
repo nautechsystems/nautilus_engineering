@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/nautilus-version-test.XXXXXX")
 trap 'rm -rf "$test_root"' EXIT
-mkdir -p "${test_root}/scripts"
+mkdir -p "${test_root}/.nautilus-engineering" "${test_root}/scripts"
 cp \
   "${REPO_ROOT}/scripts/tool-version.sh" \
   "${REPO_ROOT}/scripts/cargo-tool-version.sh" \
@@ -13,7 +13,7 @@ cp \
   "${REPO_ROOT}/scripts/uv-version.sh" \
   "${test_root}/scripts/"
 
-cat > "${test_root}/tools.toml" << 'TOML'
+cat > "${test_root}/.nautilus-engineering/tools.toml" << 'TOML'
 [uv]
 version = "0.12.3"
 
@@ -22,13 +22,19 @@ version = "nightly-2026-08-25"
 
 [shellcheck]
 version = "0.11.0.1"
+
+[cargo-vet]
+version = "0.10.1"
+TOML
+cat > "${test_root}/tools.toml" << 'TOML'
+[actionlint]
+version = "1.7.12"
 TOML
 cat > "${test_root}/Cargo.toml" << 'TOML'
 [workspace]
 members = []
 
 [workspace.metadata.tools]
-cargo-vet = "0.10.1"
 lychee = "0.21.0-beta.1"
 TOML
 cat > "${test_root}/rust-toolchain.toml" << 'TOML'
@@ -71,6 +77,8 @@ expect_output "tool version accepts pinned nightly" "nightly-2026-08-25" \
   bash "${test_root}/scripts/tool-version.sh" prek
 expect_output "tool version accepts four-component version" "0.11.0.1" \
   bash "${test_root}/scripts/tool-version.sh" shellcheck
+expect_output "tool version reads a consumer-local unique tool" "1.7.12" \
+  bash "${test_root}/scripts/tool-version.sh" actionlint
 expect_output "uv version delegates to tool version" "0.12.3" \
   bash "${test_root}/scripts/uv-version.sh"
 expect_failure "tool version requires one name" 2 "Usage: tool-version.sh" \
@@ -89,6 +97,21 @@ expect_failure "Cargo tool version rejects unsafe name" 1 "Invalid cargo tool na
 expect_failure "Cargo tool version reports missing entry" 1 "Could not find absent" \
   bash "${test_root}/scripts/cargo-tool-version.sh" absent
 
+cat >> "${test_root}/tools.toml" << 'TOML'
+
+[uv]
+version = "0.12.2"
+TOML
+expect_failure "tool version rejects a shared and local duplicate" 1 "Duplicate tool version" \
+  bash "${test_root}/scripts/tool-version.sh" uv
+
+cat >> "${test_root}/Cargo.toml" << 'TOML'
+cargo-vet = "0.10.0"
+TOML
+expect_failure "Cargo tool version rejects a shared and local duplicate" 1 \
+  "Duplicate Cargo tool version" \
+  bash "${test_root}/scripts/cargo-tool-version.sh" cargo-vet
+
 expect_output "Rust toolchain reads exact channel" "1.91.0" \
   bash "${test_root}/scripts/rust-toolchain.sh"
 cat > "${test_root}/rust-toolchain.toml" << 'TOML'
@@ -103,8 +126,10 @@ cat > "${test_root}/tools.toml" << 'TOML'
 version = "latest"
 TOML
 expect_failure "tool version rejects moving version" 1 "Invalid version for [uv]" \
+  env NAUTILUS_ENGINEERING_TOOLS_FILE="${test_root}/tools.toml" \
   bash "${test_root}/scripts/tool-version.sh" uv
 expect_failure "uv version preserves validation failure" 1 "Invalid version for [uv]" \
+  env NAUTILUS_ENGINEERING_TOOLS_FILE="${test_root}/tools.toml" \
   bash "${test_root}/scripts/uv-version.sh"
 
 if ((failures > 0)); then

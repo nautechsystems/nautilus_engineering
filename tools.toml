@@ -1,7 +1,7 @@
-# Version pins for tools used to validate this repository
+# Shared version pins for Nautilus engineering tools
 #
-# Shared hook fragments keep their required YAML structure. The pin checker verifies those
-# revisions and this repository's pre-commit config against this catalog.
+# Consumers vendor this catalog to .nautilus-engineering/tools.toml. The pin checker also verifies
+# shared hook fragments and this repository's pre-commit revisions against these versions.
 
 [prek]
 version = "0.4.14"
@@ -13,7 +13,7 @@ pre-commit-repository = "https://github.com/pre-commit/pre-commit-hooks"
 pre-commit-revision = "v{version}"
 
 [ruff]
-version = "0.16.3"
+version = "0.16.4"
 ci = true
 pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
 pre-commit-revision = "v{version}"
@@ -57,3 +57,33 @@ pre-commit-fragment = "pre-commit/markdown.yaml"
 version = "1.7.12"
 pre-commit-repository = "https://github.com/rhysd/actionlint"
 pre-commit-revision = "v{version}"
+
+[cargo-audit]
+version = "0.22.2"
+
+[cargo-deny]
+version = "0.20.2"
+
+[cargo-edit]
+version = "0.13.13"
+
+[cargo-llvm-cov]
+version = "0.9.0"
+
+[cargo-nextest]
+version = "0.9.143"
+
+[cargo-vet]
+version = "0.10.2"
+
+[uv]
+version = "0.12.6"
+
+[pip-audit]
+version = "2.10.1"
+
+[osv-scanner]
+version = "2.5.1"
+
+[capnp]
+version = "1.5.0"

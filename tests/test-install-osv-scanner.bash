@@ -56,10 +56,8 @@ case "$output" in
     fi
     ;;
   osv-scanner_linux_amd64)
-    cat > "$output" << 'SCANNER'
-#!/usr/bin/env bash
-echo "osv-scanner version 2.5.0"
-SCANNER
+    printf '#!/usr/bin/env bash\necho "osv-scanner version %s"\n' \
+      "${FAKE_ASSET_VERSION:-2.5.0}" > "$output"
     ;;
   *)
     echo "Unexpected curl output path: $output" >&2
@@ -132,6 +130,17 @@ if [[ "$status" == 1 && "$output" == *"could not find checksum"* &&
   printf 'ok   missing asset checksum fails immediately\n'
 else
   printf 'FAIL missing checksum: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+wrong_version_dir="${test_root}/wrong-version"
+mkdir -p "$wrong_version_dir"
+status=0
+output=$(run_install "$wrong_version_dir" env FAKE_ASSET_VERSION=1.0.0) || status=$?
+if [[ "$status" == 1 && "$output" == *"installed target version mismatch"* ]]; then
+  printf 'ok   downloaded target must report the required version\n'
+else
+  printf 'FAIL target version: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
 fi
 

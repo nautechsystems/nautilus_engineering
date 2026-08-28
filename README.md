@@ -6,7 +6,7 @@ repositories vendor selected files at a pinned commit, review each update locall
 own project policy.
 
 Its scope is stable behavior that should stay consistent across projects. Release processes,
-deployment logic, generated-file exceptions, toolchain pins, and other repository-specific
+deployment logic, generated-file exceptions, compiler pins, and other repository-specific
 decisions stay with each consumer.
 
 ## How shared changes reach a repository
@@ -42,6 +42,9 @@ adoption, update an existing lock, and integrate the managed pre-commit section.
 a phased path for established repositories such as NautilusTrader, where local hooks and target
 paths must remain intact.
 
+[`docs/supply-chain-security.md`](docs/supply-chain-security.md) defines the shared scanner catalog,
+typed audit policy, installation path, and local and CI wiring for dependency security checks.
+
 The source revision must be available from the repository URL in
 [`sync/manifest.toml`](sync/manifest.toml) before its lock is committed to a consumer. The sync
 command reads committed content from the local source checkout; it does not fetch, commit, or push
@@ -51,8 +54,9 @@ either repository.
 
 Shared files provide a baseline rather than a complete repository policy:
 
-- Consumer `tools.toml` files keep independent tool pins and release timing.
-- Consumer `rust-toolchain.toml` and Cargo metadata keep independent compiler and Cargo tool pins.
+- The shared catalog owns pins for tools used by multiple Nautilus repositories.
+- Consumer `tools.toml` and Cargo metadata own pins for tools used by only that repository.
+- Consumer `rust-toolchain.toml` files keep independent compiler pins.
 - Repository-specific pre-commit hooks, exclusions, and top-level settings remain outside the
   managed section.
 - Makefiles and workflows remain local and call shared scripts where the behavior is reusable.
@@ -62,11 +66,18 @@ Markdownlint and yamllint baselines can be vendored to another path and extended
 root configuration. Taplo configuration is synchronized as a whole file because Taplo does not
 support cross-file configuration inheritance.
 
-The root `tools.toml` catalogs the tools used to validate this repository. CI reads those pins
-through `scripts/tool-version.sh`, and `make check` verifies that matching pre-commit revisions stay
-aligned. This catalog is not a consumer artifact.
+The root `tools.toml` catalogs shared engineering tools and this repository's validation tools.
+Consumers vendor it to `.nautilus-engineering/tools.toml`. CI reads its pins through the shared
+version scripts, and `make check` verifies that matching pre-commit revisions stay aligned.
 
 ## Maintainer checks
+
+Run the complete local CI-readiness gate, including all repository tests, formatters, linters,
+repository checks, private-key detection, and GitHub Action pin validation with:
+
+```bash
+make pre-flight
+```
 
 Run syntax checks, tool-pin validation, and focused tests with:
 
@@ -80,7 +91,10 @@ Install the local hooks with `prek install`. Run every formatter, linter, and re
 make pre-commit
 ```
 
-These commands validate this repository; they do not run consumer test suites.
+The Makefile runs the exact cataloged prek release through uv. Nautilus Engineering has no
+dependency graph to audit. Its test suite instead exercises the shared supply-chain runner,
+installer, exact version checks, policy validation, and secondary dependency paths with controlled
+fixtures. Consumer pre-flight targets run their own unit tests and configured dependency audits.
 
 CI runs the functional checks on Linux, macOS, and Windows. Linux also runs the shell, Python, YAML,
 Markdown, and TOML linters. GitHub Action references are checked for source comments and full commit

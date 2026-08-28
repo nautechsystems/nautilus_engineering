@@ -24,8 +24,10 @@ if [ "$INSTALL_ATTEMPTS" -gt 10 ]; then
   exit 1
 fi
 
-get_installed_version() {
-  osv-scanner --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo ""
+get_version() {
+  local executable=$1
+
+  "$executable" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo ""
 }
 
 download_file() {
@@ -67,7 +69,7 @@ verify_checksum() {
 }
 
 if command -v osv-scanner > /dev/null 2>&1; then
-  INSTALLED_VERSION="$(get_installed_version)"
+  INSTALLED_VERSION="$(get_version "$(command -v osv-scanner)")"
   if [[ "$INSTALLED_VERSION" == "$OSV_SCANNER_VERSION" ]]; then
     echo "osv-scanner $OSV_SCANNER_VERSION is already installed."
     exit 0
@@ -151,6 +153,14 @@ if ! cp "$ASSET" "$TARGET_TEMP" || ! chmod +x "$TARGET_TEMP" || ! mv -f "$TARGET
   exit 1
 fi
 
+TARGET_VERSION="$(get_version "$TARGET")"
+if [[ "$TARGET_VERSION" != "$OSV_SCANNER_VERSION" ]]; then
+  echo "Error: installed target version mismatch" >&2
+  echo "  Required: $OSV_SCANNER_VERSION" >&2
+  echo "  Found:    ${TARGET_VERSION:-no version output} (at $TARGET)" >&2
+  exit 1
+fi
+
 # Drop any cached path to the previous binary before resolving it again
 hash -r
 
@@ -160,7 +170,7 @@ if ! command -v osv-scanner > /dev/null 2>&1; then
   exit 0
 fi
 
-FINAL_VERSION="$(get_installed_version)"
+FINAL_VERSION="$(get_version "$(command -v osv-scanner)")"
 if [[ "$FINAL_VERSION" != "$OSV_SCANNER_VERSION" ]]; then
   echo "Error: version mismatch after install" >&2
   echo "  Required: $OSV_SCANNER_VERSION" >&2

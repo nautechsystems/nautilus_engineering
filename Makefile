@@ -1,11 +1,12 @@
 SHELL := bash
 
+PREK := uvx --from prek==$(shell bash scripts/tool-version.sh prek) prek
 PYTHON_FILES := $(shell git ls-files --cached --others --exclude-standard -- '*.py' | LC_ALL=C sort)
 SHELL_FILES := $(shell git ls-files --cached --others --exclude-standard -- scripts sync tests | awk '/\.(bash|sh)$$/' | LC_ALL=C sort)
 TEST_FILES := $(shell git ls-files --cached --others --exclude-standard -- tests | awk '/\/test-.*\.bash$$/' | LC_ALL=C sort)
 ACTION_FILES := $(shell git ls-files --cached --others --exclude-standard -- .github | awk '/\.(yaml|yml)$$/' | LC_ALL=C sort)
 
-.PHONY: check check-github-action-pins check-python check-shell check-tool-pins pre-commit test
+.PHONY: check check-github-action-pins check-python check-shell check-tool-pins pre-commit pre-flight test
 
 check: check-python check-shell check-tool-pins test
 
@@ -25,7 +26,9 @@ check-github-action-pins:
 	bash scripts/check-github-action-shas.sh $(ACTION_FILES)
 
 pre-commit:
-	prek run --all-files
+	$(PREK) run --all-files
+
+pre-flight: pre-commit
 
 test:
 	@test -n "$(strip $(TEST_FILES))" || { echo "No tracked test files found" >&2; exit 1; }

@@ -40,20 +40,20 @@ and adopt them in reviewable groups.
 Pair a functional profile with `sync` so the consumer receives the lock checker and the managed
 pre-commit checks. The `pre-commit` profile already includes `sync`.
 
-| Profile         | Shared files selected                                                          | Consumer contract                                                   |
-| --------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
-| `pre-commit`    | Hook definitions, lint configs, Markdown table check, renderer, and sync check | Existing config with one `repos:` key                               |
-| `sync`          | Lock checker, sync hook definition, and renderer                               | Pre-commit config or equivalent unconditional local and CI wiring   |
-| `markdown`      | Written standard, markdownlint config, table check, and hooks                  | Markdown paths and repository-specific exclusions                   |
-| `shell`         | shfmt and ShellCheck definitions                                               | Bash-compatible scripts and any local exclusions                    |
-| `yaml`          | yamllint config and definition                                                 | YAML paths and any generated-file exclusions                        |
-| `toml`          | Taplo config and definition                                                    | One complete repository Taplo policy                                |
-| `cargo`         | Cargo version readers, cooldown check, and update command                      | Cargo metadata, toolchain file, tracked lockfiles, and script tests |
-| `python`        | Repository tool and uv version readers, and no-build-package check             | Consumer `tools.toml`, pyproject files, and uv lockfiles            |
-| `security`      | Repository tool version reader and pinned OSV Scanner installer                | Consumer `tools.toml` with an `osv-scanner` pin                     |
-| `tool-versions` | Readers for Cargo tools, Rust, repository tools, and uv                        | Consumer Cargo metadata, `rust-toolchain.toml`, and `tools.toml`    |
-| `ci`            | GitHub Action SHA checker                                                      | Workflow paths and network access to resolve release tags           |
-| `all`           | Every artifact in the manifest                                                 | Every contract above                                                |
+| Profile         | Shared files selected                                                            | Consumer contract                                                     |
+| --------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `pre-commit`    | Hook definitions, lint configs, Markdown table check, renderer, and sync check   | Existing config with one `repos:` key                                 |
+| `sync`          | Lock checker, sync hook definition, and renderer                                 | Pre-commit config or equivalent unconditional local and CI wiring     |
+| `markdown`      | Written standard, markdownlint config, table check, and hooks                    | Markdown paths and repository-specific exclusions                     |
+| `shell`         | shfmt and ShellCheck definitions                                                 | Bash-compatible scripts and any local exclusions                      |
+| `yaml`          | yamllint config and definition                                                   | YAML paths and any generated-file exclusions                          |
+| `toml`          | Taplo config and definition                                                      | One complete repository Taplo policy                                  |
+| `cargo`         | Shared tool catalog, Cargo version readers, cooldown check, and update command   | Local compiler pin, tracked lockfiles, Cargo policy, and script tests |
+| `python`        | Shared tool catalog, version readers, and no-build-package check                 | Local Python projects, uv lockfiles, and any unique tool pins         |
+| `security`      | Shared tool catalog, typed audit runner, version readers, and scanner installers | Local audit policy, scanner configs, dependency files, and CI wiring  |
+| `tool-versions` | Shared catalog and readers for Cargo, Rust, repository tools, and uv             | Local compiler pin and any unique tool pins                           |
+| `ci`            | GitHub Action SHA checker                                                        | Workflow paths and network access to resolve release tags             |
+| `all`           | Every artifact in the manifest                                                   | Every contract above                                                  |
 
 Run the catalog command to see each artifact's default target and profile membership:
 
@@ -213,19 +213,21 @@ Never rerun `vendor` with only the new artifact or profile when a consumer lock 
 
 ## Consumer file contracts
 
-Shared scripts keep version and policy values in consumer-owned files:
+Shared scripts separate central release pins from consumer-owned policy:
 
-| Artifact family  | Values read from the consumer                                    |
-| ---------------- | ---------------------------------------------------------------- |
-| Cargo cooldown   | `Cargo.toml` cooldown metadata and optional cargo-vet audits     |
-| Cargo tools      | `Cargo.toml` `[workspace.metadata.tools]`                        |
-| Rust toolchain   | Exact channel in `rust-toolchain.toml`                           |
-| Repository tools | Tool sections in `tools.toml`                                    |
-| Python builds    | `uv.lock` and matching `pyproject.toml` `no-build-package` lists |
-| OSV Scanner      | `tools.toml` `osv-scanner` version                               |
+| Artifact family     | Values read from the consumer                                        |
+| ------------------- | -------------------------------------------------------------------- |
+| Shared tools        | Exact versions in `.nautilus-engineering/tools.toml`                 |
+| Unique tools        | Tool sections in local `tools.toml` or Cargo workspace metadata      |
+| Supply-chain audits | Dependency surfaces and enforcement choices in `security-audit.toml` |
+| Scanner policy      | Local deny, OSV Scanner, cargo-vet, and advisory exception files     |
+| Cargo cooldown      | `Cargo.toml` cooldown metadata and optional cargo-vet audits         |
+| Rust toolchain      | Exact channel in `rust-toolchain.toml`                               |
+| Python builds       | `uv.lock` and matching `pyproject.toml` `no-build-package` lists     |
 
-Keep those files local. Shared readers and checks enforce their shape without forcing every
-repository to upgrade on the same schedule.
+Keep repository policy files local. Shared version readers fail if a shared tool is also pinned in
+a local catalog. Use [`supply-chain-security.md`](supply-chain-security.md) to define audit policy
+and wire the same runner into local pre-flight checks and CI.
 
 ## Sync and recovery behavior
 
