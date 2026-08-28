@@ -79,6 +79,9 @@ expect_output "tool version accepts four-component version" "0.11.0.1" \
   bash "${test_root}/scripts/tool-version.sh" shellcheck
 expect_output "tool version reads a consumer-local unique tool" "1.7.12" \
   bash "${test_root}/scripts/tool-version.sh" actionlint
+expect_output "tool version recognizes an aliased local catalog path" "1.7.12" \
+  env NAUTILUS_ENGINEERING_TOOLS_FILE="${test_root}/scripts/../tools.toml" \
+  bash "${test_root}/scripts/tool-version.sh" actionlint
 expect_output "uv version delegates to tool version" "0.12.3" \
   bash "${test_root}/scripts/uv-version.sh"
 expect_failure "tool version requires one name" 2 "Usage: tool-version.sh" \

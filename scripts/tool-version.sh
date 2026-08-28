@@ -52,7 +52,7 @@ read_version() {
 
 SHARED_VERSION=$(read_version "$SHARED_TOOLS_TOML")
 LOCAL_VERSION=""
-if [[ "$LOCAL_TOOLS_TOML" != "$SHARED_TOOLS_TOML" && -f "$LOCAL_TOOLS_TOML" ]]; then
+if [[ -f "$LOCAL_TOOLS_TOML" && ! "$LOCAL_TOOLS_TOML" -ef "$SHARED_TOOLS_TOML" ]]; then
   LOCAL_VERSION=$(read_version "$LOCAL_TOOLS_TOML")
 fi
 
