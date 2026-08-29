@@ -14,6 +14,7 @@ test_root=$(cd "$test_root" && pwd -P)
 trap 'rm -rf "$test_root"' EXIT
 fixture="${test_root}/fixture"
 fake_bin="${test_root}/fake-bin"
+proxy_bin="${test_root}/proxy-bin"
 command_log="${test_root}/commands.log"
 mkdir -p \
   "${fixture}/.nautilus-engineering" \
@@ -22,7 +23,8 @@ mkdir -p \
   "${fixture}/scripts" \
   "${fixture}/supply-chain" \
   "${fixture}/web" \
-  "$fake_bin"
+  "$fake_bin" \
+  "$proxy_bin"
 cp "${REPO_ROOT}/scripts/security-audit.py" "${fixture}/scripts/"
 
 write_shared_catalog() {
@@ -172,6 +174,18 @@ fi
 FAKE_OSV
 chmod +x "${fake_bin}/cargo" "${fake_bin}/npm" "${fake_bin}/osv-scanner" "${fake_bin}/uv"
 
+cat > "${proxy_bin}/rustup" << 'FAKE_RUSTUP'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$(basename "$0")" != cargo ]]; then
+  echo "rustup proxy was invoked without the cargo alias" >&2
+  exit 1
+fi
+exec "${FAKE_CARGO_TARGET:?}" "$@"
+FAKE_RUSTUP
+chmod +x "${proxy_bin}/rustup"
+ln -s rustup "${proxy_bin}/cargo"
+
 failures=0
 run_audit() {
   local command=$1
@@ -183,6 +197,22 @@ run_audit() {
     --root "$fixture" \
     "$@"
 }
+
+: > "$command_log"
+status=0
+output=$(FAKE_CARGO_TARGET="${fake_bin}/cargo" \
+  FAKE_COMMAND_LOG="$command_log" \
+  PATH="${proxy_bin}:${fake_bin}:${PATH}" \
+  python3 "${fixture}/scripts/security-audit.py" \
+  check-tools \
+  --root "$fixture" 2>&1) || status=$?
+if [[ "$status" == 0 && "$output" == *"All required supply-chain tools"* ]] &&
+  grep -Fq "cargo|${fixture}|audit --version" "$command_log"; then
+  printf 'ok   executable resolution preserves rustup proxy aliases\n'
+else
+  printf 'FAIL rustup proxy alias: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
 
 : > "$command_log"
 status=0
