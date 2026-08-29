@@ -25,7 +25,7 @@ lets each repository adopt them on its own schedule.
 | Path          | Contents                                                                  |
 | ------------- | ------------------------------------------------------------------------- |
 | `standards/`  | Written standards, including the shared Markdown baseline                 |
-| `config/`     | Baseline configuration for markdownlint, yamllint, and Taplo              |
+| `config/`     | Baseline configuration for markdownlint, rustfmt, yamllint, and Taplo     |
 | `pre-commit/` | Repository entries rendered into managed consumer sections                |
 | `scripts/`    | Portable checks, version readers, installers, and dependency update tools |
 | `sync/`       | The artifact catalog, vendoring command, checker, and section renderer    |
@@ -33,7 +33,7 @@ lets each repository adopt them on its own schedule.
 
 [`standards/markdown.md`](standards/markdown.md) defines the Markdown syntax and formatting rules. It
 uses CommonMark as its base and GitHub Flavored Markdown for documented extensions. The files under
-`config/` are the authoritative lint and formatting baselines for Markdown, YAML, and TOML.
+`config/` are the authoritative lint and formatting baselines for Markdown, Rust, YAML, and TOML.
 
 ## Adopt shared files
 
@@ -64,7 +64,8 @@ Shared files provide a baseline rather than a complete repository policy:
 
 Markdownlint and yamllint baselines can be vendored to another path and extended from a consumer's
 root configuration. Taplo configuration is synchronized as a whole file because Taplo does not
-support cross-file configuration inheritance.
+support cross-file configuration inheritance. The shared Rust formatting baseline lives in
+`config/rustfmt.toml` and vendors to a Cargo repository's root by default.
 
 The root `tools.toml` catalogs shared engineering tools and this repository's validation tools.
 Consumers vendor it to `.nautilus-engineering/tools.toml`. CI reads its pins through the shared

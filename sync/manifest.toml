@@ -40,6 +40,13 @@ executable = false
 profiles = ["toml", "pre-commit"]
 
 [[artifact]]
+id = "rustfmt-config"
+source = "config/rustfmt.toml"
+target = "rustfmt.toml"
+executable = false
+profiles = ["cargo"]
+
+[[artifact]]
 id = "pre-commit-markdown"
 source = "pre-commit/markdown.yaml"
 target = ".nautilus-engineering/pre-commit/markdown.yaml"

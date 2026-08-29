@@ -183,6 +183,6 @@ jobs:
       - name: Check TOML
         run: |
           taplo format --check --config config/taplo.toml \
-            config/taplo.toml pyproject.toml sync/manifest.toml tools.toml
+            config/rustfmt.toml config/taplo.toml pyproject.toml sync/manifest.toml tools.toml
           taplo lint --config config/taplo.toml \
-            config/taplo.toml pyproject.toml sync/manifest.toml tools.toml
+            config/rustfmt.toml config/taplo.toml pyproject.toml sync/manifest.toml tools.toml

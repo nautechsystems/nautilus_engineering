@@ -583,6 +583,21 @@ else
   failures=$((failures + 1))
 fi
 
+cargo_consumer="${test_root}/cargo-consumer"
+mkdir "$cargo_consumer"
+git -C "$cargo_consumer" init --quiet
+status=0
+output=$(bash "$SYNC_SCRIPT" --source "$full_source" vendor \
+  --consumer "$cargo_consumer" --profile cargo 2>&1) || status=$?
+if [[ "$status" == 0 && -f "${cargo_consumer}/rustfmt.toml" ]] &&
+  cmp -s "${full_source}/config/rustfmt.toml" "${cargo_consumer}/rustfmt.toml"; then
+  printf 'ok   cargo profile includes the shared rustfmt configuration\n'
+else
+  printf 'FAIL cargo profile rustfmt configuration: exit %s\n%s\n' \
+    "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
 precommit_consumer="${test_root}/precommit-consumer"
 mkdir "$precommit_consumer"
 git -C "$precommit_consumer" init --quiet

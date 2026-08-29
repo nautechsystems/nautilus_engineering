@@ -72,7 +72,7 @@ pre-commit checks. The `pre-commit` profile already includes `sync`.
 | `shell`         | shfmt and ShellCheck definitions                                                 | Bash-compatible scripts and any local exclusions                      |
 | `yaml`          | yamllint config and definition                                                   | YAML paths and any generated-file exclusions                          |
 | `toml`          | Taplo config and definition                                                      | One complete repository Taplo policy                                  |
-| `cargo`         | Shared tool catalog, Cargo version readers, cooldown check, and update command   | Local compiler pin, tracked lockfiles, Cargo policy, and script tests |
+| `cargo`         | Rust formatting, shared tools, version readers, cooldown check, and updates      | Local compiler pin, tracked lockfiles, Cargo policy, and script tests |
 | `python`        | Shared tool catalog, version readers, and no-build-package check                 | Local Python projects, uv lockfiles, and any unique tool pins         |
 | `security`      | Shared tool catalog, typed audit runner, version readers, and scanner installers | Local audit policy, scanner configs, dependency files, and CI wiring  |
 | `tool-versions` | Shared catalog and readers for Cargo, Rust, repository tools, and uv             | Local compiler pin and any unique tool pins                           |
@@ -185,6 +185,7 @@ checker and dependency update transaction, and commit them only when those tests
 ```bash
 sync/sync.bash update \
   --consumer ../nautilus_trader \
+  --add rustfmt-config \
   --add cargo-tool-version \
   --add cargo-cooldown-check \
   --add rust-toolchain-version \
