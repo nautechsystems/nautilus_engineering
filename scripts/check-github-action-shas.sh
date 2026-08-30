@@ -4,6 +4,10 @@
 #   # https://github.com/owner/repo
 #   uses: owner/repo/path@<sha> # <tag>
 
+# This check collects every failure before exiting, so errexit would stop at handled command
+# failures and would make the valid no-match pipeline below fatal when combined with pipefail.
+set -u
+
 if [[ $# -eq 0 ]]; then
   echo "Usage: $0 <action-file>..." >&2
   exit 2

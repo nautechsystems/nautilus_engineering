@@ -11,6 +11,13 @@ executable = false
 profiles = ["markdown"]
 
 [[artifact]]
+id = "shell-standard"
+source = "standards/shell.md"
+target = "docs/shell-style.md"
+executable = false
+profiles = ["shell"]
+
+[[artifact]]
 id = "markdownlint-config"
 source = "config/markdownlint.jsonc"
 target = ".markdownlint.jsonc"

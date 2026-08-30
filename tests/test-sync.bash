@@ -598,6 +598,22 @@ else
   failures=$((failures + 1))
 fi
 
+shell_consumer="${test_root}/shell-consumer"
+mkdir "$shell_consumer"
+git -C "$shell_consumer" init --quiet
+status=0
+output=$(bash "$SYNC_SCRIPT" --source "$full_source" vendor \
+  --consumer "$shell_consumer" --profile shell 2>&1) || status=$?
+if [[ "$status" == 0 && "$output" == *"Vendored 2 artifact(s)"* ]] &&
+  cmp -s "${full_source}/standards/shell.md" "${shell_consumer}/docs/shell-style.md" &&
+  cmp -s "${full_source}/pre-commit/shell.yaml" \
+    "${shell_consumer}/.nautilus-engineering/pre-commit/shell.yaml"; then
+  printf 'ok   shell profile includes the written standard and hook definitions\n'
+else
+  printf 'FAIL shell profile dependencies: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
 precommit_consumer="${test_root}/precommit-consumer"
 mkdir "$precommit_consumer"
 git -C "$precommit_consumer" init --quiet

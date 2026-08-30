@@ -69,7 +69,7 @@ pre-commit checks. The `pre-commit` profile already includes `sync`.
 | `pre-commit`    | Hook definitions, lint configs, Markdown table check, renderer, and sync check   | Existing config with one `repos:` key                                 |
 | `sync`          | Lock checker, sync hook definition, and renderer                                 | Pre-commit config or equivalent unconditional local and CI wiring     |
 | `markdown`      | Written standard, markdownlint config, table check, and hooks                    | Markdown paths and repository-specific exclusions                     |
-| `shell`         | shfmt and ShellCheck definitions                                                 | Bash-compatible scripts and any local exclusions                      |
+| `shell`         | Written standard, shfmt, and ShellCheck definitions                              | Bash-compatible scripts, local integration, and documented exceptions |
 | `yaml`          | yamllint config and definition                                                   | YAML paths and any generated-file exclusions                          |
 | `toml`          | Taplo config and definition                                                      | One complete repository Taplo policy                                  |
 | `cargo`         | Rust formatting, shared tools, version readers, cooldown check, and updates      | Local compiler pin, tracked lockfiles, Cargo policy, and script tests |
@@ -90,14 +90,15 @@ with `target_fixed = true` reject overrides because the managed files refer to t
 
 ## Adopt into a new repository
 
-For a new repository that wants the common pre-commit and Markdown baseline, run:
+For a new repository that wants the common pre-commit, Markdown, and shell baselines, run:
 
 ```bash
 consumer_repo=../new_nautilus_repository
 sync/sync.bash vendor \
   --consumer "$consumer_repo" \
   --profile pre-commit \
-  --profile markdown
+  --profile markdown \
+  --profile shell
 ```
 
 The command writes the selected files and `.nautilus-engineering.lock`. It does not stage or commit
@@ -169,6 +170,20 @@ sync/sync.bash update \
   --add markdown-standard \
   --target markdown-standard=docs/developer_guide/markdown_style.md
 ```
+
+Keep NautilusTrader's repository-specific shell paths, Make targets, and test inventory in
+`docs/developer_guide/shell.md`. Vendor the shared shell baseline beside it:
+
+```bash
+sync/sync.bash update \
+  --consumer ../nautilus_trader \
+  --add shell-standard \
+  --target shell-standard=docs/developer_guide/shell_style.md
+```
+
+Remove duplicated baseline rules from the local guide during the same adoption review. Keep the
+local page focused on NautilusTrader's directories, commands, and documented exceptions, and link
+it to `shell_style.md`.
 
 Its GitHub Action checker also has a local target:
 

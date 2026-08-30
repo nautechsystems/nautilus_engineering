@@ -24,16 +24,17 @@ lets each repository adopt them on its own schedule.
 
 | Path          | Contents                                                                  |
 | ------------- | ------------------------------------------------------------------------- |
-| `standards/`  | Written standards, including the shared Markdown baseline                 |
+| `standards/`  | Written standards for Markdown and shell scripts                          |
 | `config/`     | Baseline configuration for markdownlint, rustfmt, yamllint, and Taplo     |
 | `pre-commit/` | Repository entries rendered into managed consumer sections                |
 | `scripts/`    | Portable checks, version readers, installers, and dependency update tools |
 | `sync/`       | The artifact catalog, vendoring command, checker, and section renderer    |
 | `tests/`      | Focused tests for shared behavior                                         |
 
-[`standards/markdown.md`](standards/markdown.md) defines the Markdown syntax and formatting rules. It
-uses CommonMark as its base and GitHub Flavored Markdown for documented extensions. The files under
-`config/` are the authoritative lint and formatting baselines for Markdown, Rust, YAML, and TOML.
+[`standards/markdown.md`](standards/markdown.md) defines the Markdown syntax and formatting rules.
+[`standards/shell.md`](standards/shell.md) defines shell selection, portability, failure handling,
+formatting, and testing. The files under `config/` and `pre-commit/` provide the authoritative lint
+and formatting baselines for Markdown, Rust, shell, YAML, and TOML.
 
 ## Adopt shared files
 
