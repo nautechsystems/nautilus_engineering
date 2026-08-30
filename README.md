@@ -70,7 +70,7 @@ support cross-file configuration inheritance. The shared Rust formatting baselin
 
 The root `tools.toml` catalogs shared engineering tools and this repository's validation tools.
 Consumers vendor it to `.nautilus-engineering/tools.toml`. CI reads its pins through the shared
-version scripts, and `make check` verifies that matching pre-commit revisions stay aligned.
+version scripts, and `make check` verifies that matching pre-commit pins stay aligned.
 
 ## Maintainer checks
 

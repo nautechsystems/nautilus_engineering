@@ -35,5 +35,5 @@ The sync check is an unconditional local hook. Keep `always_run: true` and `pass
 so lock-only changes, deletions, and renamed managed files cannot bypass it. The managed-section
 check has the same settings and compares staged content during pre-commit.
 
-Each definition records its hook revision once. Do not maintain a separate version catalog that
-must agree with these files.
+Each definition records its rendered hook revision or managed dependency pin. The root
+`tools.toml` remains the version source of truth, and the tool-pin check rejects drift.

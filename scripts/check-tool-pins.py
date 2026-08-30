@@ -25,8 +25,12 @@ from pathlib import Path
 
 __all__: tuple[str, ...] = ()
 
-REPO_LINE = re.compile(r"^\s*-\s+repo:\s+([^\s#]+)")
+REPO_LINE = re.compile(r"^(\s*)-\s+repo:\s+([^\s#]+)")
 REV_LINE = re.compile(r"^\s+rev:\s+([^\s#]+)")
+HOOK_LINE = re.compile(r"^(\s*)-\s+id:\s+([^\s#]+)")
+DEPENDENCIES_LINE = re.compile(r"^(\s*)additional_dependencies:\s*(?:&([^\s#]+))?\s*$")
+DEPENDENCIES_ALIAS_LINE = re.compile(r"^\s*additional_dependencies:\s*\*([^\s#]+)\s*$")
+DEPENDENCY_LINE = re.compile(r"^\s*-\s+([^\s#]+)")
 STABLE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 SECURITY_TOOLS = frozenset(
     {"cargo-audit", "cargo-deny", "cargo-vet", "osv-scanner", "pip-audit", "uv"},
@@ -34,7 +38,9 @@ SECURITY_TOOLS = frozenset(
 TOOL_FIELDS = frozenset(
     {
         "ci",
+        "pre-commit-dependency",
         "pre-commit-fragment",
+        "pre-commit-hooks",
         "pre-commit-repository",
         "pre-commit-revision",
         "version",
@@ -51,19 +57,24 @@ class ToolPin:
     name: str
     version: str
     ci: bool
+    dependency_template: str | None
+    dependency: str | None
+    hooks: tuple[str, ...]
     repository: str | None
     revision: str | None
     fragment: Path | None
 
 
 # Catalog validation stays in one pass so every error retains its table context
-def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912
+def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912, PLR0915
     try:
         catalog = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as error:
         raise PinError(f"{path}: {error}") from error
 
     pins = []
+    dependencies = set()
+    hooks = set()
     repositories = set()
     for name, values in catalog.items():
         if not isinstance(values, dict):
@@ -75,6 +86,8 @@ def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912
 
         version = values.get("version")
         ci = values.get("ci", False)
+        dependency_template = values.get("pre-commit-dependency")
+        hook_values = values.get("pre-commit-hooks")
         repository = values.get("pre-commit-repository")
         template = values.get("pre-commit-revision")
         fragment_value = values.get("pre-commit-fragment")
@@ -84,6 +97,20 @@ def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912
             raise PinError(f"{path}: [{name}].version must be a stable X.Y.Z release")
         if not isinstance(ci, bool):
             raise PinError(f"{path}: [{name}].ci must be a Boolean")
+        if dependency_template is not None and not isinstance(dependency_template, str):
+            raise PinError(f"{path}: [{name}].pre-commit-dependency must be a string")
+        if hook_values is not None and (
+            not isinstance(hook_values, list)
+            or not hook_values
+            or any(not isinstance(hook, str) or not hook for hook in hook_values)
+        ):
+            raise PinError(
+                f"{path}: [{name}].pre-commit-hooks must be a non-empty string array",
+            )
+        if (dependency_template is None) != (hook_values is None):
+            raise PinError(
+                f"{path}: [{name}] must set both pre-commit-dependency and pre-commit-hooks",
+            )
         if (repository is None) != (template is None):
             raise PinError(
                 f"{path}: [{name}] must set both pre-commit-repository and pre-commit-revision",
@@ -94,8 +121,29 @@ def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912
             raise PinError(f"{path}: [{name}].pre-commit-revision must be a string")
         if fragment_value is not None and not isinstance(fragment_value, str):
             raise PinError(f"{path}: [{name}].pre-commit-fragment must be a string")
-        if fragment_value is not None and repository is None:
+        if dependency_template is not None and repository is not None:
+            raise PinError(
+                f"{path}: [{name}] cannot combine local and repository pre-commit metadata",
+            )
+        if fragment_value is not None and dependency_template is None and repository is None:
             raise PinError(f"{path}: [{name}] sets a fragment without pre-commit metadata")
+
+        dependency = None
+        if dependency_template is not None:
+            if dependency_template.count("{version}") != 1:
+                raise PinError(
+                    f"{path}: [{name}].pre-commit-dependency must contain one {{version}}",
+                )
+            dependency = dependency_template.replace("{version}", version)
+            if dependency in dependencies:
+                raise PinError(f"{path}: duplicate pre-commit dependency {dependency}")
+            dependencies.add(dependency)
+
+        hook_names = tuple(hook_values or ())
+        for hook in hook_names:
+            if hook in hooks:
+                raise PinError(f"{path}: duplicate pre-commit hook {hook}")
+            hooks.add(hook)
 
         revision = None
         if template is not None:
@@ -113,6 +161,9 @@ def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912
                 name=name,
                 version=version,
                 ci=ci,
+                dependency_template=dependency_template,
+                dependency=dependency,
+                hooks=hook_names,
                 repository=repository,
                 revision=revision,
                 fragment=Path(fragment_value) if fragment_value is not None else None,
@@ -156,22 +207,50 @@ def resolve_bash() -> str:
     raise PinError("Git Bash or MSYS2 Bash was not found beside Git")
 
 
-def read_pre_commit(path: Path) -> dict[str, tuple[str, int]]:
+# Repository revisions, local hooks, and YAML dependency aliases share one traversal
+def read_pre_commit(  # noqa: C901, PLR0912, PLR0915
+    path: Path,
+) -> tuple[dict[str, tuple[str, int]], dict[str, set[str]]]:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError as error:
         raise PinError(f"{path}: {error}") from error
 
     entries = {}
+    hooks: dict[str, set[str]] = {}
+    anchors: dict[str, set[str]] = {}
     pending = None
+    local_indent = None
+    hook_name = None
+    hook_indent = None
+    dependencies_indent = None
+    dependencies_hook = None
+    dependencies_anchor = None
     for line_number, line in enumerate(lines, start=1):
+        if dependencies_indent is not None:
+            stripped = line.lstrip()
+            indent = len(line) - len(stripped)
+            if stripped and not stripped.startswith("#") and indent <= dependencies_indent:
+                dependencies_indent = None
+                dependencies_hook = None
+                dependencies_anchor = None
+            elif dependency_match := DEPENDENCY_LINE.match(line):
+                dependency = dependency_match.group(1).strip("'\"")
+                hooks[dependencies_hook].add(dependency)
+                if dependencies_anchor is not None:
+                    anchors[dependencies_anchor].add(dependency)
+                continue
+
         repo_match = REPO_LINE.match(line)
         if repo_match:
             if pending is not None:
                 repository, repo_line = pending
                 raise PinError(f"{path}:{repo_line}: {repository} has no revision")
-            repository = repo_match.group(1).strip("'\"")
+            repository = repo_match.group(2).strip("'\"")
             pending = None if repository == "local" else (repository, line_number)
+            local_indent = len(repo_match.group(1)) if repository == "local" else None
+            hook_name = None
+            hook_indent = None
             continue
 
         rev_match = REV_LINE.match(line)
@@ -181,21 +260,84 @@ def read_pre_commit(path: Path) -> dict[str, tuple[str, int]]:
                 raise PinError(f"{path}:{line_number}: duplicate repository {repository}")
             entries[repository] = (rev_match.group(1).strip("'\""), line_number)
             pending = None
+            continue
+
+        if local_indent is None:
+            continue
+
+        hook_match = HOOK_LINE.match(line)
+        if hook_match and len(hook_match.group(1)) > local_indent:
+            hook_name = hook_match.group(2).strip("'\"")
+            hook_indent = len(hook_match.group(1))
+            if hook_name in hooks:
+                raise PinError(f"{path}:{line_number}: duplicate local hook {hook_name}")
+            hooks[hook_name] = set()
+            continue
+
+        if hook_name is None or hook_indent is None:
+            continue
+
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+        if stripped and not stripped.startswith("#") and indent <= hook_indent:
+            hook_name = None
+            hook_indent = None
+            continue
+
+        alias_match = DEPENDENCIES_ALIAS_LINE.match(line)
+        if alias_match:
+            alias = alias_match.group(1)
+            if alias not in anchors:
+                raise PinError(f"{path}:{line_number}: unknown dependency alias {alias}")
+            hooks[hook_name].update(anchors[alias])
+            continue
+
+        dependencies_match = DEPENDENCIES_LINE.match(line)
+        if dependencies_match:
+            dependencies_indent = len(dependencies_match.group(1))
+            dependencies_hook = hook_name
+            dependencies_anchor = dependencies_match.group(2)
+            if dependencies_anchor is not None:
+                if dependencies_anchor in anchors:
+                    raise PinError(
+                        f"{path}:{line_number}: duplicate dependency anchor {dependencies_anchor}",
+                    )
+                anchors[dependencies_anchor] = set()
 
     if pending is not None:
         repository, repo_line = pending
         raise PinError(f"{path}:{repo_line}: {repository} has no revision")
-    return entries
+    return entries, hooks
+
+
+def check_hook_dependency(path: Path, pin: ToolPin, hook: str, dependencies: set[str]) -> None:
+    expected = pin.dependency
+    template = pin.dependency_template
+    if expected is None or template is None:
+        raise PinError(f"tools.toml [{pin.name}]: missing local dependency metadata")
+    if expected not in dependencies:
+        raise PinError(f"{path}: hook {hook} is missing {expected} from tools.toml [{pin.name}]")
+
+    prefix, suffix = template.split("{version}")
+    conflicting = sorted(
+        dependency
+        for dependency in dependencies
+        if dependency != expected and dependency.startswith(prefix) and dependency.endswith(suffix)
+    )
+    if conflicting:
+        raise PinError(
+            f"{path}: hook {hook} has conflicting dependencies: {', '.join(conflicting)}",
+        )
 
 
 # Config and fragment validation share one traversal so duplicate checks stay consistent
-def check_pre_commit(root: Path, pins: list[ToolPin]) -> None:  # noqa: C901
-    expected = {pin.repository: pin for pin in pins if pin.repository is not None}
+def check_pre_commit(root: Path, pins: list[ToolPin]) -> None:  # noqa: C901, PLR0912
+    expected_repositories = {pin.repository: pin for pin in pins if pin.repository is not None}
     config_path = root / ".pre-commit-config.yaml"
-    config_entries = read_pre_commit(config_path)
+    config_entries, config_hooks = read_pre_commit(config_path)
 
     for repository, (revision, line_number) in config_entries.items():
-        pin = expected.get(repository)
+        pin = expected_repositories.get(repository)
         if pin is None:
             raise PinError(f"{config_path}:{line_number}: unregistered repository {repository}")
         if revision != pin.revision:
@@ -204,16 +346,27 @@ def check_pre_commit(root: Path, pins: list[ToolPin]) -> None:  # noqa: C901
                 f"expected {pin.revision} from tools.toml [{pin.name}]",
             )
 
-    missing = [pin.repository for pin in expected.values() if pin.repository not in config_entries]
+    missing = [
+        pin.repository
+        for pin in expected_repositories.values()
+        if pin.repository not in config_entries
+    ]
     if missing:
         raise PinError(f"{config_path}: missing registered repositories: {', '.join(missing)}")
 
+    for pin in pins:
+        for hook in pin.hooks:
+            dependencies = config_hooks.get(hook)
+            if dependencies is None:
+                raise PinError(f"{config_path}: missing tools.toml [{pin.name}] hook {hook}")
+            check_hook_dependency(config_path, pin, hook, dependencies)
+
     fragment_entries = {}
     for fragment_path in sorted((root / "pre-commit").glob("*.yaml")):
-        entries = read_pre_commit(fragment_path)
-        fragment_entries[fragment_path.relative_to(root)] = entries
+        entries, hooks = read_pre_commit(fragment_path)
+        fragment_entries[fragment_path.relative_to(root)] = (entries, hooks)
         for repository, (revision, line_number) in entries.items():
-            pin = expected.get(repository)
+            pin = expected_repositories.get(repository)
             if pin is None:
                 raise PinError(
                     f"{fragment_path}:{line_number}: unregistered repository {repository}"
@@ -227,11 +380,18 @@ def check_pre_commit(root: Path, pins: list[ToolPin]) -> None:  # noqa: C901
     for pin in pins:
         if pin.fragment is None:
             continue
-        entries = fragment_entries.get(pin.fragment)
-        if entries is None:
+        fragment = fragment_entries.get(pin.fragment)
+        if fragment is None:
             raise PinError(f"tools.toml [{pin.name}]: missing fragment {pin.fragment}")
-        if pin.repository not in entries:
+        entries, hooks = fragment
+        if pin.repository is not None and pin.repository not in entries:
             raise PinError(f"{pin.fragment}: missing tools.toml [{pin.name}] repository")
+        if pin.dependency is not None:
+            fragment_hooks = [hook for hook in pin.hooks if hook in hooks]
+            if not fragment_hooks:
+                raise PinError(f"{pin.fragment}: missing tools.toml [{pin.name}] hooks")
+            for hook in fragment_hooks:
+                check_hook_dependency(pin.fragment, pin, hook, hooks[hook])
 
 
 def check_ci(root: Path, pins: list[ToolPin]) -> None:

@@ -28,11 +28,19 @@ version = "${cargo_audit_version}"
 version = "2.0.0"
 pre-commit-repository = "https://example.com/beta"
 pre-commit-revision = "release-{version}"
+
+[gamma]
+version = "3.0.0"
+pre-commit-dependency = "cli:gamma:{version}"
+pre-commit-hooks = ["gamma", "gamma-lint"]
+pre-commit-fragment = "pre-commit/gamma.yaml"
 TOML
 }
 
 write_config() {
   local alpha_revision=$1
+  local gamma_version=${2:-3.0.0}
+  local gamma_conflict=${3:-}
   cat > "${test_root}/.pre-commit-config.yaml" << YAML
 repos:
   - repo: https://example.com/alpha
@@ -43,6 +51,26 @@ repos:
     rev: release-2.0.0
     hooks:
       - id: beta
+  - repo: local
+    hooks:
+      - id: gamma
+        name: gamma
+        entry: gamma
+        language: rust
+        additional_dependencies: &gamma_dependencies
+          - cli:gamma:${gamma_version}
+${gamma_conflict}
+      - id: gamma-lint
+        name: gamma-lint
+        entry: gamma lint
+        language: rust
+        additional_dependencies: *gamma_dependencies
+      - id: unrelated
+        name: unrelated
+        entry: unrelated
+        language: rust
+        additional_dependencies:
+          - cli:gamma:3.0.0
 YAML
 }
 
@@ -52,6 +80,17 @@ write_fragment() {
   rev: v1.2.3
   hooks:
     - id: alpha
+YAML
+
+  cat > "${test_root}/pre-commit/gamma.yaml" << 'YAML'
+- repo: local
+  hooks:
+    - id: gamma
+      name: gamma
+      entry: gamma
+      language: rust
+      additional_dependencies:
+        - cli:gamma:3.0.0
 YAML
 }
 
@@ -114,6 +153,14 @@ write_catalog 0.22.2
 write_config v1.2.4
 expect_failure "mismatched hook revision" "uses v1.2.4, expected v1.2.3"
 
+write_config v1.2.3 3.0.1
+expect_failure "correct dependency on another hook does not mask owner drift" \
+  "hook gamma is missing cli:gamma:3.0.0 from tools.toml [gamma]"
+
+write_config v1.2.3 3.0.0 '          - cli:gamma:2.0.0'
+expect_failure "conflicting owner dependency" \
+  "hook gamma has conflicting dependencies: cli:gamma:2.0.0"
+
 write_config v1.2.3
 write_ci 'alpha==1.2.3'
 expect_failure "literal CI version" "hard-codes version 1.2.3"
@@ -129,10 +176,17 @@ cat > "${test_root}/pre-commit/alpha.yaml" << 'YAML'
 YAML
 expect_failure "missing fragment entry" "missing tools.toml [alpha] repository"
 
+write_fragment
+sed 's/cli:gamma:3.0.0/cli:gamma:3.0.1/' \
+  "${test_root}/pre-commit/gamma.yaml" > "${test_root}/fragment.tmp"
+mv "${test_root}/fragment.tmp" "${test_root}/pre-commit/gamma.yaml"
+expect_failure "mismatched fragment dependency" \
+  "missing cli:gamma:3.0.0 from tools.toml [gamma]"
+
 cat >> "${test_root}/tools.toml" << 'TOML'
 unexpected = true
 TOML
-expect_failure "unknown catalog field" "[beta] has unknown field(s): unexpected"
+expect_failure "unknown catalog field" "[gamma] has unknown field(s): unexpected"
 
 if ((failures > 0)); then
   printf '\n%s tool pin test(s) failed\n' "$failures" >&2
