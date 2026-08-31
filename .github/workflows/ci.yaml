@@ -179,6 +179,7 @@ jobs:
           npx --yes "markdownlint-cli2@$(bash scripts/tool-version.sh markdownlint-cli2)" \
             --config config/markdownlint.jsonc \
             "${markdown_files[@]}"
+          python3 -B scripts/check-markdown-tables.py "${markdown_files[@]}"
 
       - name: Check TOML
         run: |

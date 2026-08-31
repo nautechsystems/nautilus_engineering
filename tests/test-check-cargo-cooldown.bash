@@ -10,7 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CHECK_SCRIPT="${REPO_ROOT}/scripts/check-cargo-cooldown.sh"
+CHECK_SCRIPT_SOURCE="${REPO_ROOT}/scripts/check-cargo-cooldown.sh"
 REAL_DATE="$(command -v date)"
 
 for required in git awk jq curl date grep; do
@@ -237,7 +237,8 @@ write_audits() {
 # Fresh repo with a committed baseline lock, so `git diff HEAD` sees the change.
 setup_repo() {
   repo="${test_root}/repo-${1}"
-  mkdir -p "$repo"
+  mkdir -p "$repo/scripts"
+  cp "$CHECK_SCRIPT_SOURCE" "$repo/scripts/check-cargo-cooldown.sh"
   git -C "$repo" init --quiet
   git -C "$repo" config user.email test@example.com
   git -C "$repo" config user.name "Test"
@@ -254,10 +255,13 @@ setup_repo() {
 # that CI and most contributors actually take.
 run_check() {
   local bin_path="$fake_bin"
+  local run_dir=${CHECK_CWD:-$repo}
+  local script_path=${CHECK_SCRIPT_PATH:-${repo}/scripts/check-cargo-cooldown.sh}
   if [[ "${USE_BSD_DATE:-0}" != "1" ]]; then
     bin_path="$curl_only_bin"
   fi
-  (cd "$repo" && PATH="${bin_path}:${PATH}" bash "$CHECK_SCRIPT" "$@" 2>&1)
+  (cd "$run_dir" &&
+    PATH="${bin_path}:${PATH}" bash "$script_path" "$@" 2>&1)
 }
 
 expect() {
@@ -328,6 +332,11 @@ printf 'serde 1.1.0 %s\n' "$old_date" > "$fixture"
 : > "$curl_log"
 write_lock "serde" "1.1.0" "0.1.0"
 expect "crate older than the window passes" 0 "are at least 3 days old"
+CHECK_CWD="$test_root" expect "script resolves the consumer root from its own path" 0 \
+  "are at least 3 days old"
+CHECK_CWD="${repo}/scripts" CHECK_SCRIPT_PATH="../scripts/check-cargo-cooldown.sh" \
+  expect "relative invocation resolves its help source" 0 \
+  "Flag registry crate versions introduced by a Cargo.lock diff" --help
 if grep -Fq -- '--retry 3 --retry-all-errors --retry-max-time 60 --max-time 15' "$curl_log"; then
   printf 'ok   crates.io lookups use bounded retries\n'
 else
@@ -347,7 +356,8 @@ else
 fi
 
 : > "$cargo_log"
-expect "fix restores the prior version through Cargo" 0 \
+CHECK_CWD="${repo}/scripts" CHECK_SCRIPT_PATH="../scripts/check-cargo-cooldown.sh" \
+  expect "fix restores the prior version through Cargo" 0 \
   "serde 1.1.0 -> 1.0.0 (Cargo.lock)" --fix
 if grep -Fq 'version = "1.0.0"' "${repo}/Cargo.lock" &&
   grep -Fq 'update --offline --manifest-path Cargo.toml -p serde@1.1.0 --precise 1.0.0' "$cargo_log"; then

@@ -30,7 +30,7 @@ chmod +x "${fake_bin}/git"
 printf '# https://github.com/actions/checkout\nuses: actions/checkout@%s # v1.2.3\n' \
   "$commit_sha" > "$action_file"
 PATH="${fake_bin}:${PATH}" bash "$CHECK_SCRIPT" "$action_file" > "$output"
-grep -Fq "OK ($commit_sha)" "$output"
+grep -Fxq "Checking actions/checkout (v1.2.3): OK ($commit_sha)" "$output"
 
 printf '# https://github.com/actions/checkout\nuses: actions/checkout/subpath@%s # v1.2.3\n' \
   "$commit_sha" > "$action_file"
@@ -135,5 +135,77 @@ if bash "$CHECK_SCRIPT" > "$output" 2>&1; then
   exit 1
 fi
 grep -Fq "Usage:" "$output"
+
+missing_file="${test_root}/missing-action.yml"
+status=0
+output_text=$(bash "$CHECK_SCRIPT" "$missing_file" 2>&1) || status=$?
+if [[ "$status" != 2 ||
+  "$output_text" != "Action file is not a readable regular file: $missing_file" ]]; then
+  printf 'FAIL missing action file: exit %s\n%s\n' "$status" "$output_text" >&2
+  exit 1
+fi
+
+mktemp_bin="${test_root}/mktemp-bin"
+mktemp_state="${test_root}/mktemp-state"
+mktemp_log="${test_root}/mktemp.log"
+mkdir "$mktemp_bin"
+cat > "${mktemp_bin}/mktemp" << 'FAKE_MKTEMP'
+#!/usr/bin/env bash
+set -euo pipefail
+
+count=0
+if [[ -f "${FAKE_MKTEMP_STATE:?}" ]]; then
+  count=$(< "$FAKE_MKTEMP_STATE")
+fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$FAKE_MKTEMP_STATE"
+if [[ "$count" == 2 ]]; then
+  exit 1
+fi
+
+path=$("${REAL_MKTEMP:?}" "$@")
+printf '%s\n' "$path" >> "${FAKE_MKTEMP_LOG:?}"
+printf '%s\n' "$path"
+FAKE_MKTEMP
+chmod +x "${mktemp_bin}/mktemp"
+
+printf '# https://github.com/actions/checkout\nuses: actions/checkout@%s # v1.2.3\n' \
+  "$commit_sha" > "$action_file"
+status=0
+output_text=$(FAKE_MKTEMP_LOG="$mktemp_log" \
+  FAKE_MKTEMP_STATE="$mktemp_state" \
+  REAL_MKTEMP="$(command -v mktemp)" \
+  PATH="${mktemp_bin}:${PATH}" \
+  bash "$CHECK_SCRIPT" "$action_file" 2>&1) || status=$?
+first_temp=$(< "$mktemp_log")
+if [[ "$status" != 2 ||
+  "$output_text" != "Could not create the temporary action failure file" ||
+  -e "$first_temp" ]]; then
+  printf 'FAIL second mktemp failure: exit %s, first temp %s\n%s\n' \
+    "$status" "$first_temp" "$output_text" >&2
+  exit 1
+fi
+
+pipeline_bin="${test_root}/pipeline-bin"
+pipeline_tmp="${test_root}/pipeline-tmp"
+mkdir "$pipeline_bin" "$pipeline_tmp"
+cat > "${pipeline_bin}/sort" << 'FAKE_SORT'
+#!/usr/bin/env bash
+cat > /dev/null
+exit 3
+FAKE_SORT
+chmod +x "${pipeline_bin}/sort"
+
+status=0
+output_text=$(TMPDIR="$pipeline_tmp" PATH="${pipeline_bin}:${PATH}" \
+  bash "$CHECK_SCRIPT" "$action_file" 2>&1) || status=$?
+remaining_temp=$(find "$pipeline_tmp" -type f -print -quit)
+if [[ "$status" != 2 ||
+  "$output_text" != "Could not collect GitHub Action references" ||
+  -n "$remaining_temp" ]]; then
+  printf 'FAIL pipeline dependency failure: exit %s, remaining temp %s\n%s\n' \
+    "$status" "${remaining_temp:-none}" "$output_text" >&2
+  exit 1
+fi
 
 echo "All GitHub Action SHA tests passed"

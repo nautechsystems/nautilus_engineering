@@ -91,11 +91,32 @@ output=$(run_install "$install_dir" env) || status=$?
 if [[ "$status" == 0 && "$output" == *"installed successfully"* ]] &&
   [[ -x "${install_dir}/osv-scanner" ]] &&
   [[ $("${install_dir}/osv-scanner" --version) == "osv-scanner version 2.5.0" ]] &&
+  [[ "$output" != *"..."* ]] &&
   grep -Fq -- '--retry 5 --retry-all-errors --connect-timeout 20 --max-time 300' \
     "${test_root}/curl.log"; then
   printf 'ok   verified release installs with bounded curl settings\n'
 else
   printf 'FAIL verified install: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+cat > "${fake_bin}/mv" << 'FAKE_MV'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 1
+FAKE_MV
+chmod +x "${fake_bin}/mv"
+install_failure_dir="${test_root}/install-failure"
+mkdir -p "$install_failure_dir"
+status=0
+output=$(run_install "$install_failure_dir" env) || status=$?
+rm "${fake_bin}/mv"
+install_temps=("${install_failure_dir}"/.osv-scanner.*)
+if [[ "$status" == 1 && "$output" == *"could not install osv-scanner"* &&
+  ! -e "${install_temps[0]}" ]]; then
+  printf 'ok   failed installation removes its target temporary file\n'
+else
+  printf 'FAIL target temporary cleanup: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
 fi
 

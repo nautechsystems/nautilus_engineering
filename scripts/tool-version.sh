@@ -73,4 +73,4 @@ if [[ ! "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+([.-][0-9
   exit 1
 fi
 
-echo -n "$VERSION"
+printf '%s' "$VERSION"

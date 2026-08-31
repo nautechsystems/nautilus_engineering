@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CHECK_SCRIPT="${REPO_ROOT}/scripts/check-markdown-tables.py"
+CI_WORKFLOW="${REPO_ROOT}/.github/workflows/ci.yaml"
 
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/nautilus-markdown-tables-test.XXXXXX")
 trap 'rm -rf "$test_root"' EXIT
@@ -68,6 +69,13 @@ fenced_after=$(git hash-object "$fenced_file")
 if [[ "$status" != 0 || -s "$output_file" || "$fenced_before" != "$fenced_after" ]]; then
   printf 'FAIL idempotence or ignored blocks: exit %s\n' "$status" >&2
   cat "$output_file" >&2
+  exit 1
+fi
+
+if ! grep -Fq \
+  "python3 -B scripts/check-markdown-tables.py \"\${markdown_files[@]}\"" \
+  "$CI_WORKFLOW"; then
+  printf 'FAIL CI does not run the Markdown table check\n' >&2
   exit 1
 fi
 
