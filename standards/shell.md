@@ -9,6 +9,22 @@ exceptions in a separate local guide.
 Bash is the default. Use POSIX `sh` only when a supported caller cannot rely on Bash being
 installed.
 
+## Requirement levels
+
+Each rule has one of three levels:
+
+- **Required:** Applies to every in-scope shell artifact. Rules stated as unqualified imperatives
+  such as "Use" and "Do not", or with "must", are Required.
+- **Preferred:** Identifies the default when more than one valid form exists. Preferred rules use
+  "Prefer" and do not affect conformance.
+- **Transitional:** Applies to the named construct when it is added or substantially edited, and is
+  labeled **Transitional** or described as transitional. Existing instances may remain until a
+  separate migration.
+
+Statements with "may" or "allowed" grant bounded permissions rather than obligations. Any
+condition limiting that permission is Required. A repository may document a narrower local
+exception where its supported environment or existing interface requires one.
+
 ## Authority and references
 
 Treat this standard as the project policy. Use the
@@ -42,8 +58,8 @@ Prefer a script when:
   behavior becomes hard to review.
 - A repeated maintenance or release task benefits from ShellCheck, `shfmt`, and focused tests.
 
-Keep a command inline when it is short, used once, and clearer in its caller. Do not wrap one stable
-command only to add another file.
+Prefer to keep a command inline when it is short, used once, and clearer in its caller. Do not wrap
+one stable command only to add another file.
 
 Use another language when the task centers on structured-data processing, complex state, parallel
 work, performance-sensitive logic, or domain behavior that needs extensive unit tests. Script
@@ -75,9 +91,10 @@ Use POSIX `sh` for a small bootstrap or wrapper only when avoiding a Bash depend
 supported interface. Test the script under every supported `/bin/sh`; simple syntax and a clean
 ShellCheck result do not prove portable behavior across different `sh` implementations.
 
-Existing filenames may predate this extension policy, so some `.sh` files contain Bash. Treat their
-shebangs as the source of truth. Do not rename an existing script only to change its extension.
-Apply the policy to new files and to scoped renames that already update every call site and document.
+The extension policy is transitional because existing filenames may predate it, so some `.sh`
+files contain Bash. Treat their shebangs as the source of truth. Do not rename an existing script
+only to change its extension. Apply the policy to new files and to scoped renames that already
+update every call site and document.
 
 ## Define the portability target
 
@@ -118,8 +135,10 @@ capability or operating system and implement both forms.
 | Nanosecond time   | `date +%N`     | No common form    | Use an existing run ID or `$RANDOM` for cache busting.    |
 
 Quote paths and expansions so spaces do not change argument boundaries. Do not assume filesystem
-paths are case-sensitive. Resolve repository-relative paths from the script location, not from the
-caller's working directory.
+paths are case-sensitive. Resolve bundled resources from the script location. Resolve a target
+repository from an explicit root argument or the repository discovery mechanism defined by the
+script's interface. Treat user-supplied relative paths according to that interface. Do not make
+behavior depend on an accidental working directory.
 
 Use only commands installed by the documented development or runner setup. If an optional command
 is necessary, check for it with `command -v` and report how to install or replace it. Store scripts
@@ -134,16 +153,17 @@ with LF endings through `.gitattributes` or an equivalent repository mechanism.
 - Keep component-specific scripts beside the component when a central script directory would hide
   their ownership.
 
-Use lowercase kebab-case under general and CI script directories. Name a companion regression test
-`test-<script-name>.bash` or `test-<script-name>.sh` so the tested pair sorts together. Follow an
+Prefer lowercase kebab-case under general and CI script directories. Name a companion regression
+test to match the repository's documented test inventory. Within that constraint, prefer
+`test-<script-name>.bash` or `test-<script-name>.sh` so the tested pair sorts together. Prefer an
 established local naming family for repository hooks and component scripts.
 
-Keep each script focused on one task, and extend an existing script when new logic shares the same
-responsibility.
+Prefer to keep each script focused on one task and to extend an existing script when new logic
+shares the same responsibility.
 
 ## Structure scripts for reliable execution
 
-Standalone Bash scripts should start with:
+Start standalone Bash scripts with:
 
 ```bash
 #!/usr/bin/env bash
@@ -181,14 +201,16 @@ local value
 value=$(produce_value)
 ```
 
-- Use lowercase names for function-local variables. Reserve uppercase names for exported
-  environment variables and repository-wide constants. Follow an established local family where
-  changing it would create asymmetry.
+- Prefer lowercase names for function-local variables and uppercase names for exported environment
+  variables and repository-wide constants. Prefer an established local family where changing it
+  would create asymmetry.
 
 ### Control output and side effects
 
 - Keep machine-readable output on standard output and diagnostics on standard error when callers
-  capture the result. Use `printf` for arbitrary data or output with a defined format.
+  capture the result. Use `printf` for arbitrary or variable data, output without a newline,
+  escape-sensitive text, and machine-readable output with a defined format. `echo` is allowed only
+  for fixed human-readable lines that do not begin with an option or depend on escape handling.
 - Do not end routine status output with a terminating period. Keep punctuation when the output is a
   complete explanatory or diagnostic sentence.
 - Create temporary files and directories with `mktemp`, register cleanup with `trap`, and constrain
@@ -208,20 +230,20 @@ functions or shell state. A sourceable Bash file must not call `exit` or change 
 options. Return errors from functions and let the caller choose its error policy. Use
 `${BASH_SOURCE[0]}` instead of `$0` to resolve the source file's location.
 
-When a script needs several functions, define `main` first, place called functions below their
-callers, and invoke `main "$@"` after all definitions. This keeps the task visible at the top while
-ensuring every function exists before execution starts.
+For a standalone script that needs several functions, prefer to use a `main` entry point, define
+`main` first, and place called functions below their callers. When a script uses `main`, invoke
+`main "$@"` after all function definitions so every function exists before execution starts.
 
 ## Integrate with task runners and CI
 
-Task-runner commands should provide the stable, discoverable interface that developers run. Keep
-dependencies, build variables, and concurrency limits in the task runner, then invoke a script with
-an explicit interpreter.
+Use task-runner commands as the stable, discoverable interface that developers run. Keep
+dependencies, build variables, and concurrency limits in the task runner, then invoke a script
+with an explicit interpreter.
 
-CI workflows should provide workflow context through named environment variables and call the same
-script used locally where practical. Keep CI-specific output files and expressions at the workflow
-boundary when the script is also a local command. A script dedicated to one CI system may write its
-integration files when that behavior is its stated purpose.
+Provide CI workflow context through named environment variables. Prefer to call the same script
+used locally where practical. Keep CI-specific output files and expressions at the workflow
+boundary when the script is also a local command. A script dedicated to one CI system may write
+its integration files when that behavior is its stated purpose.
 
 Multiline inline shell follows the same quoting, failure-handling, and portability rules. Extract it
 when branches, loops, retries, cleanup, or reusable behavior warrant focused tests.
@@ -272,9 +294,13 @@ Each companion test:
 
 - Creates isolated state under `mktemp -d` and removes it on exit.
 - Supplies fake external commands through a temporary `PATH` instead of changing production code.
-- Uses distinct inputs and exact output, exit status, and side-effect assertions.
+- Uses distinct inputs and asserts the exact exit status, every stable contract-relevant output
+  value, and all material side effects. Use anchored or presence checks only for output documented
+  as variable or diagnostic.
 - Covers success, invalid input, dependency failure, and cleanup when those paths exist.
-- Fails when a required test command is unavailable; a passing skip does not validate behavior.
+- Fails when a required test command is unavailable on a supported platform.
+- May skip a platform that is explicitly outside the behavior's supported scope. CI must run the
+  test on every supported platform where the behavior applies.
 - Runs from the repository's documented script-test command and CI inventory.
 
 When a script has callers on multiple operating systems, exercise platform-sensitive changes on
@@ -288,7 +314,8 @@ Windows behavior.
 - The workflow, task runner, and script own the right parts of the operation.
 - Shell remains appropriate for the task's data, state, control flow, and expected growth.
 - The extension, shebang, executable mode, and documented portability target agree.
-- The script runs independently of the caller's working directory.
+- Bundled resources and target repository discovery do not depend on an accidental working
+  directory.
 - Arguments, failures, temporary files, retries, output, and secrets have explicit handling.
 - Focused behavior tests, `shfmt`, and ShellCheck pass for the final changed files.
 - Every call site, workflow path filter, test inventory, and document uses the final filename.
