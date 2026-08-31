@@ -74,6 +74,8 @@ version scripts, and `make check` verifies that matching pre-commit pins stay al
 
 ## Maintainer checks
 
+### Local validation
+
 Run the complete local CI-readiness gate, including all repository tests, formatters, linters,
 repository checks, private-key detection, and GitHub Action pin validation with:
 
@@ -100,10 +102,14 @@ fixtures. Every maintained script has behavioral coverage, and CI runs every tra
 `tests/test-*.bash` file. Consumer pre-flight targets run their own unit tests and configured
 dependency audits.
 
-CI runs the functional checks on Linux, macOS, and Windows. Linux also runs the shell, Python, YAML,
-Markdown, and TOML linters. CI also validates the central tool catalog against its pre-commit and
-workflow consumers. GitHub Action references are checked for source comments and full commit SHAs
-that match their named release tags.
+### CI validation
+
+CI runs the functional checks on Linux and macOS. These are the supported development and validation
+platforms for this repository. Shared scripts remain portable for downstream use on Linux, macOS,
+and Windows through Git Bash or MSYS2, but this repository does not validate Windows development.
+Linux also runs the shell, Python, YAML, Markdown, and TOML linters. CI also validates the central
+tool catalog against its pre-commit and workflow consumers. GitHub Action references are checked for
+source comments and full commit SHAs that match their named release tags.
 
 ## License
 
