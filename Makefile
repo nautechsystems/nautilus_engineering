@@ -6,7 +6,7 @@ SHELL_FILES := $(shell git ls-files --cached --others --exclude-standard -- scri
 TEST_FILES := $(shell git ls-files --cached --others --exclude-standard -- tests | awk '/\/test-.*\.bash$$/' | LC_ALL=C sort)
 ACTION_FILES := $(shell git ls-files --cached --others --exclude-standard -- .github | awk '/\.(yaml|yml)$$/' | LC_ALL=C sort)
 
-.PHONY: check check-github-action-pins check-python check-shell check-tool-pins pre-commit pre-flight test
+.PHONY: adoption-status check check-github-action-pins check-python check-shell check-tool-pins check-tool-updates outdated pre-commit pre-flight test
 
 check: check-python check-shell check-tool-pins test
 
@@ -24,6 +24,15 @@ check-tool-pins:
 check-github-action-pins:
 	@test -n "$(strip $(ACTION_FILES))" || { echo "No tracked GitHub Action files found" >&2; exit 1; }
 	bash scripts/check-github-action-shas.sh $(ACTION_FILES)
+
+adoption-status:
+	@test -n "$(strip $(CONSUMERS))" || { echo "Set CONSUMERS to explicit consumer paths" >&2; exit 2; }
+	python3 -B scripts/report-adoption-status.py $(CONSUMERS)
+
+check-tool-updates:
+	bash scripts/check-tool-updates.bash
+
+outdated: check-tool-updates
 
 pre-commit:
 	$(PREK) run --all-files

@@ -32,6 +32,10 @@ DEPENDENCIES_LINE = re.compile(r"^(\s*)additional_dependencies:\s*(?:&([^\s#]+))
 DEPENDENCIES_ALIAS_LINE = re.compile(r"^\s*additional_dependencies:\s*\*([^\s#]+)\s*$")
 DEPENDENCY_LINE = re.compile(r"^\s*-\s+([^\s#]+)")
 STABLE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+RELEASE_SOURCE = re.compile(
+    r"(?:crates|npm|pypi):[A-Za-z0-9][A-Za-z0-9._-]*"
+    r"|(?:github|github-tags):[A-Za-z0-9._-]+/[A-Za-z0-9._-]+",
+)
 SECURITY_TOOLS = frozenset(
     {"cargo-audit", "cargo-deny", "cargo-vet", "osv-scanner", "pip-audit", "uv"},
 )
@@ -43,6 +47,7 @@ TOOL_FIELDS = frozenset(
         "pre-commit-hooks",
         "pre-commit-repository",
         "pre-commit-revision",
+        "releases",
         "version",
     },
 )
@@ -57,6 +62,7 @@ class ToolPin:
     name: str
     version: str
     ci: bool
+    releases: str
     dependency_template: str | None
     dependency: str | None
     hooks: tuple[str, ...]
@@ -86,6 +92,7 @@ def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912, PLR0915
 
         version = values.get("version")
         ci = values.get("ci", False)
+        releases = values.get("releases")
         dependency_template = values.get("pre-commit-dependency")
         hook_values = values.get("pre-commit-hooks")
         repository = values.get("pre-commit-repository")
@@ -97,6 +104,11 @@ def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912, PLR0915
             raise PinError(f"{path}: [{name}].version must be a stable X.Y.Z release")
         if not isinstance(ci, bool):
             raise PinError(f"{path}: [{name}].ci must be a Boolean")
+        if not isinstance(releases, str) or RELEASE_SOURCE.fullmatch(releases) is None:
+            raise PinError(
+                f"{path}: [{name}].releases must be crates:NAME, github:OWNER/REPO, "
+                "github-tags:OWNER/REPO, npm:NAME, or pypi:NAME",
+            )
         if dependency_template is not None and not isinstance(dependency_template, str):
             raise PinError(f"{path}: [{name}].pre-commit-dependency must be a string")
         if hook_values is not None and (
@@ -161,6 +173,7 @@ def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912, PLR0915
                 name=name,
                 version=version,
                 ci=ci,
+                releases=releases,
                 dependency_template=dependency_template,
                 dependency=dependency,
                 hooks=hook_names,

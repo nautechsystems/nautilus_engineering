@@ -17,20 +17,24 @@ write_catalog() {
 [alpha]
 version = "1.2.3"
 ci = true
+releases = "pypi:alpha"
 pre-commit-repository = "https://example.com/alpha"
 pre-commit-revision = "v{version}"
 pre-commit-fragment = "pre-commit/alpha.yaml"
 
 [cargo-audit]
 version = "${cargo_audit_version}"
+releases = "crates:cargo-audit"
 
 [beta]
 version = "2.0.0"
+releases = "github:example/beta"
 pre-commit-repository = "https://example.com/beta"
 pre-commit-revision = "release-{version}"
 
 [gamma]
 version = "3.0.0"
+releases = "npm:gamma"
 pre-commit-dependency = "cli:gamma:{version}"
 pre-commit-hooks = ["gamma", "gamma-lint"]
 pre-commit-fragment = "pre-commit/gamma.yaml"
@@ -187,6 +191,26 @@ cat >> "${test_root}/tools.toml" << 'TOML'
 unexpected = true
 TOML
 expect_failure "unknown catalog field" "[gamma] has unknown field(s): unexpected"
+
+write_catalog 0.22.2
+cat >> "${test_root}/tools.toml" << 'TOML'
+
+[delta]
+version = "1.0.0"
+TOML
+expect_failure "missing release source" "[delta].releases must be"
+
+for source in svn:delta github:delta crates:owner/delta "pypi:delta name"; do
+  write_catalog 0.22.2
+  cat >> "${test_root}/tools.toml" << TOML
+
+[delta]
+version = "1.0.0"
+releases = "${source}"
+TOML
+  expect_failure "invalid release source ${source}" "[delta].releases must be"
+done
+write_catalog 0.22.2
 
 if ((failures > 0)); then
   printf '\n%s tool pin test(s) failed\n' "$failures" >&2

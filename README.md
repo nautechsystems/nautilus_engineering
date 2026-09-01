@@ -102,6 +102,30 @@ fixtures. Every maintained script has behavioral coverage, and CI runs every tra
 `tests/test-*.bash` file. Consumer pre-flight targets run their own unit tests and configured
 dependency audits.
 
+### Status reports
+
+Report each consumer lock revision against the current source `HEAD`, with its changed and
+unadopted artifacts, with:
+
+```bash
+make adoption-status CONSUMERS="../consumer-a ../consumer-b"
+```
+
+The report requires explicit consumer paths. It reads locks and local Git history only and never
+changes a consumer or scans neighboring directories.
+
+Report cataloged tool pins whose upstream has a newer release with:
+
+```bash
+make check-tool-updates
+```
+
+`make outdated` is an alias. The report includes each latest release's UTC timestamp and age. In a
+terminal, releases from today are red, releases from the prior two days are orange, and older
+releases are uncolored. Each `tools.toml` entry names its release source in `releases`, and
+`make check` verifies the field stays complete. Update a pin here first; consumers adopt the
+reviewed commit.
+
 ### CI validation
 
 CI runs the functional checks on Linux and macOS. These are the supported development and validation
