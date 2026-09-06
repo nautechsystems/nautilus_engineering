@@ -21,9 +21,15 @@ Each rule has one of three levels:
   labeled **Transitional** or described as transitional. Existing instances may remain until a
   separate migration.
 
+An unchanged existing instance of a Transitional construct conforms to this standard. Apply a
+transitional rule only to the named construct that is added or substantially edited. Changes
+elsewhere in the same file do not trigger a file-wide migration.
+
 Statements with "may" or "allowed" grant bounded permissions rather than obligations. Any
 condition limiting that permission is Required. A repository may document a narrower local
-exception where its supported environment or existing interface requires one.
+exception where its supported environment or existing interface requires one. The exception must
+name the exact artifacts or construct it covers, the rule it changes, and the environment or
+interface that requires it.
 
 ## Authority and references
 
@@ -170,10 +176,20 @@ Start standalone Bash scripts with:
 set -euo pipefail
 ```
 
+Header comments may appear after the shebang and before `set`. Enable strict mode before the first
+executable statement.
+
 Use `set -eu` in a standalone POSIX `sh` script. POSIX added `pipefail` in POSIX.1-2024, but
 supported `/bin/sh` implementations may not provide it. Check pipeline behavior explicitly when a
-failure must propagate. If a script cannot use these options, explain the specific control flow
-that makes an option unsafe.
+failure must propagate.
+
+Outside the Transitional test-fake permission below, explain the specific control flow that makes a
+required option unsafe.
+
+**Transitional:** A test-generated standalone executable may use narrower shell options when an
+option would prevent it from reproducing the intended command behavior. Existing test fakes with
+narrower options may remain. When adding or substantially editing such a fake, explain each omitted
+option beside the generated prologue and handle any relevant failure status explicitly.
 
 ### Handle failures explicitly
 
@@ -208,8 +224,10 @@ value=$(produce_value)
 ### Control output and side effects
 
 - Keep machine-readable output on standard output and diagnostics on standard error when callers
-  capture the result. Use `printf` for arbitrary or variable data, output without a newline,
-  escape-sensitive text, and machine-readable output with a defined format. `echo` is allowed only
+  capture the result.
+- **Transitional:** Use `printf` for arbitrary or variable data, output without a newline,
+  escape-sensitive text, and machine-readable output with a defined format. Existing `echo` calls
+  may remain until the command or its output contract is substantially edited. `echo` is allowed
   for fixed human-readable lines that do not begin with an option or depend on escape handling.
 - Do not end routine status output with a terminating period. Keep punctuation when the output is a
   complete explanatory or diagnostic sentence.
@@ -317,5 +335,6 @@ Windows behavior.
 - Bundled resources and target repository discovery do not depend on an accidental working
   directory.
 - Arguments, failures, temporary files, retries, output, and secrets have explicit handling.
+- Every added or substantially edited Transitional construct follows its named rule.
 - Focused behavior tests, `shfmt`, and ShellCheck pass for the final changed files.
 - Every call site, workflow path filter, test inventory, and document uses the final filename.
