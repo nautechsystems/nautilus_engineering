@@ -76,7 +76,7 @@ pre-commit checks. The `pre-commit` profile already includes `sync`.
 | `python`        | Shared tool catalog, version readers, and no-build-package check                 | Local Python projects, uv lockfiles, and any unique tool pins         |
 | `security`      | Shared tool catalog, typed audit runner, version readers, and scanner installers | Local audit policy, scanner configs, dependency files, and CI wiring  |
 | `tool-versions` | Shared catalog and readers for Cargo, Rust, repository tools, and uv             | Local compiler pin and any unique tool pins                           |
-| `ci`            | GitHub Action SHA checker                                                        | Workflow paths and network access to resolve release tags             |
+| `ci`            | GitHub Action SHA checker and zizmor hook                                        | Workflow paths and network access to resolve release tags             |
 | `all`           | Every artifact in the manifest                                                   | Every contract above                                                  |
 
 Run the catalog command to see each artifact's default target and profile membership:
@@ -251,6 +251,18 @@ delete them only as an explicit, reviewed consumer change.
 
 Never rerun `vendor` with only the new artifact or profile when a consumer lock already exists.
 `vendor` replaces the managed selection in the lock, while `update` preserves it.
+
+## Adopt zizmor
+
+The shared catalog pins zizmor, and `pre-commit-zizmor` owns its offline hook configuration.
+The hook scans `.github/` with strict collection and an informational severity threshold.
+It keeps all rules enabled. Repository-specific exceptions remain local.
+
+Existing consumers add the hook with `update --add pre-commit-zizmor` and render the managed
+pre-commit section. Remove the old local zizmor hook if its settings differ from the shared
+fragment; the renderer rejects conflicting definitions. CI reads the version with
+`bash scripts/tool-version.sh zizmor` after adopting `shared-tool-catalog` and `tool-version`.
+Keep token permissions, online audit execution, and SARIF publication in the consumer workflow.
 
 ## Consumer file contracts
 

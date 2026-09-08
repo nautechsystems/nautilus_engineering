@@ -201,3 +201,11 @@ target = "scripts/check-nautilus-engineering-sync.bash"
 target_fixed = true
 executable = true
 profiles = ["sync", "pre-commit"]
+
+[[artifact]]
+id = "pre-commit-zizmor"
+source = "pre-commit/zizmor.yaml"
+target = ".nautilus-engineering/pre-commit/zizmor.yaml"
+target_fixed = true
+executable = false
+profiles = ["pre-commit", "ci"]

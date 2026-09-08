@@ -620,14 +620,16 @@ git -C "$precommit_consumer" init --quiet
 status=0
 output=$(bash "$SYNC_SCRIPT" --source "$full_source" vendor \
   --consumer "$precommit_consumer" --profile pre-commit 2>&1) || status=$?
-if [[ "$status" == 0 && "$output" == *"Vendored 11 artifact(s)"* ]] &&
+if [[ "$status" == 0 && "$output" == *"Vendored 12 artifact(s)"* ]] &&
   [[ -f "${precommit_consumer}/.markdownlint.jsonc" ]] &&
   [[ -f "${precommit_consumer}/.yamllint.yaml" ]] &&
   [[ -f "${precommit_consumer}/.taplo.toml" ]] &&
   [[ -f "${precommit_consumer}/scripts/check-markdown-tables.py" ]] &&
   [[ -f "${precommit_consumer}/scripts/check-nautilus-engineering-sync.bash" ]] &&
   [[ -x "${precommit_consumer}/scripts/manage-nautilus-engineering-pre-commit.py" ]] &&
-  [[ -f "${precommit_consumer}/.nautilus-engineering/pre-commit/sync.yaml" ]]; then
+  [[ -f "${precommit_consumer}/.nautilus-engineering/pre-commit/sync.yaml" ]] &&
+  cmp -s "${REPO_ROOT}/pre-commit/zizmor.yaml" \
+    "${precommit_consumer}/.nautilus-engineering/pre-commit/zizmor.yaml"; then
   printf 'ok   pre-commit profile includes every referenced shared input\n'
 else
   printf 'FAIL pre-commit profile dependencies: exit %s\n%s\n' "$status" "$output" >&2

@@ -126,6 +126,17 @@ printf '%s\n' 'uses: ./.github/actions/common-setup' > "$action_file"
 bash "$CHECK_SCRIPT" "$action_file" > "$output"
 grep -Fq "No GitHub Action SHAs found." "$output"
 
+for reference in '$/.github/actions/common-setup' '$/.github/workflows/build.yml'; do
+  printf 'uses: %s\n' "$reference" > "$action_file"
+  status=0
+  output_text=$(PATH="${fake_bin}:${PATH}" bash "$CHECK_SCRIPT" "$action_file" 2>&1) || status=$?
+  if [[ "$status" != 0 || "$output_text" != "No GitHub Action SHAs found." ]]; then
+    printf 'FAIL self-repository reference %s: exit %s\n%s\n' \
+      "$reference" "$status" "$output_text" >&2
+    exit 1
+  fi
+done
+
 printf '%s\n' 'uses: docker://alpine:3.22' > "$action_file"
 bash "$CHECK_SCRIPT" "$action_file" > "$output"
 grep -Fq "No GitHub Action SHAs found." "$output"

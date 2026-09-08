@@ -152,6 +152,9 @@ jobs:
       - name: Validate pre-commit config
         run: prek validate-config .pre-commit-config.yaml
 
+      - name: Check workflow security
+        run: prek run zizmor --all-files
+
       - name: Check Python
         run: |
           python_file_output=$(git ls-files '*.py' | LC_ALL=C sort)
