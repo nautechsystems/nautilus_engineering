@@ -48,6 +48,7 @@ crate="${crate##*/}"
 version="${url##*/}"
 line="$(grep -E "^${crate} ${version} " "$FAKE_CRATES_FIXTURE" 2> /dev/null || true)"
 if [[ -z "$line" ]]; then
+  echo "curl: (22) The requested URL returned error: 429" >&2
   exit 22
 fi
 printf '{"version":{"created_at":"%s"}}\n' "$(printf '%s' "$line" | awk '{print $3}')"
@@ -630,6 +631,12 @@ setup_repo lookup-failure
 : > "$fixture"
 write_lock "serde" "1.1.0" "0.1.0"
 expect "unreachable registry fails closed" 1 "could not be reached on crates.io"
+expect "lookup preserves HTTP failure diagnostics" 1 \
+  "curl: (22) The requested URL returned error: 429"
+expect "lookup identifies the requested crate and URL" 1 \
+  "Looking up serde 1.1.0: https://crates.io/api/v1/crates/serde/1.1.0"
+expect "lookup summary includes curl exit status" 1 \
+  "serde 1.1.0: registry request failed (curl exit 22, https://crates.io/api/v1/crates/serde/1.1.0)"
 
 # The gate must work where GNU date is unavailable, as on macOS.
 setup_repo bsd-date
