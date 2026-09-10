@@ -211,6 +211,44 @@ The shared Cargo scripts discover tracked lockfiles and update each correspondin
 also validate paths and serialize update transactions. Consumer tests must cover NautilusTrader's
 lockfile layout, Cargo metadata, and local command wiring.
 
+## Gate Rust compilation on dependency cooldown
+
+Each consumer must run the full cooldown check before every compilation-capable entry point.
+The goal is to check resolved registry versions before dependency build scripts or procedural
+macros can execute. Vendoring the script alone does not enforce this policy.
+
+Invoke the compilation gate from the consumer root:
+
+```bash
+bash scripts/check-cargo-cooldown.sh --all --cache target/.cargo-cooldown.json
+```
+
+The full check covers every tracked `Cargo.lock`, including versions already committed or pulled
+from another branch. It requires no Git comparison base or full checkout history. Keep the
+diff-based mode for dependency-update and pre-commit feedback; an empty diff does not prove that
+resolved dependencies satisfy the cooldown.
+
+Wire the gate into build, check, lint, test, documentation, benchmark, and code-generation commands
+that can compile Rust, including direct CI commands and source-install paths. Stub generation may
+also compile Rust. Enforce these requirements in the consumer:
+
+- Every compilation command waits for a successful gate, including under parallel task execution.
+  Listing the gate beside another compilation prerequisite does not establish that ordering.
+- Compilation uses `--locked`, or an equivalent tool-enforced constraint, so Cargo cannot resolve
+  unchecked replacements. Keep manifests and lockfiles unchanged between checking and compiling.
+- A rejected gate produces no compilation invocations. Test this with mocked build commands under
+  parallel execution, and verify that an accepted gate allows compilation.
+- External tool installations with separate lockfiles need their own checks. A repository-lockfile
+  check does not cover those dependencies or intercept arbitrary direct Cargo invocations.
+
+The cache records only successful full checks. Unchanged lockfiles, policy, audits, and script
+content allow an early return without registry requests; a change to any of them requires another
+full check. Failed checks are not cached. Keep the cache as local verification state and never
+restore it from an untrusted source.
+
+Cooldown reduces exposure to newly published malicious registry releases. It does not certify
+older releases, sandbox build scripts, or vet Git and local path dependencies.
+
 ## Update an existing adoption
 
 The update command reads the lock and preserves its artifact set, recorded profiles, and target

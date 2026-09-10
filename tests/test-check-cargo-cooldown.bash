@@ -719,6 +719,55 @@ else
   failures=$((failures + 1))
 fi
 
+setup_repo full-lock
+printf 'serde 1.0.0 %s\n' "$fresh_date" > "$fixture"
+CI=true CHANGED_BASE_SHA=unavailable expect "full check catches committed fresh versions without a base" \
+  1 "within the 3-day cooldown" --all
+expect "full check cannot silently use a diff" 2 "--all cannot be combined" --all --base HEAD
+expect "full check cannot repair" 2 "--all cannot be combined" --all --fix
+expect "diff check cannot use a full-check cache" 2 "--cache requires --all" --cache "$test_root/cache"
+
+cache="$test_root/full-cache"
+expect "failed full check does not cache success" 1 "within the 3-day cooldown" --all --cache "$cache"
+if [[ -e "$cache" ]]; then
+  printf 'FAIL failed full check created a cache file\n' >&2
+  failures=$((failures + 1))
+fi
+printf 'serde 1.0.0 %s\n' "$old_date" > "$fixture"
+cache_parent="$test_root/cache-parent-file"
+: > "$cache_parent"
+expect "cache write failure reports an environment error" 2 \
+  "are at least 3 days old" --all --cache "$cache_parent/cache"
+expect "full check accepts old committed versions" 0 "Checking 1 resolved" --all --cache "$cache"
+: > "$fixture"
+expect "identical full check reuses success without network" 0 "full-check cache matches" --all --cache "$cache"
+printf '# policy change\n' >> "${repo}/Cargo.toml"
+expect "policy change invalidates cache" 1 "could not be reached" --all --cache "$cache"
+printf 'serde 1.0.0 %s\n' "$old_date" > "$fixture"
+expect "changed policy can be checked again" 0 "Checking 1 resolved" --all --cache "$cache"
+printf '# audit change\n' >> "${repo}/.supply-chain/audits.toml"
+: > "$fixture"
+expect "audit change invalidates cache" 1 "could not be reached" --all --cache "$cache"
+printf 'serde 1.0.0 %s\n' "$old_date" > "$fixture"
+expect "changed audits can be checked again" 0 "Checking 1 resolved" --all --cache "$cache"
+write_lock "serde" "1.1.0" "0.1.0"
+printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
+expect "lock change invalidates cache" 1 "within the 3-day cooldown" --all --cache "$cache"
+write_cargo_toml 'serde = "1.1.0"'
+write_audits '[[audits.serde]]
+version = "1.1.0"'
+expect "full check accepts audited exception" 0 "audited exception" --all --cache "$cache"
+write_audits ""
+expect "revoked audit invalidates cached exception" 1 "missing a cargo-vet audit" --all --cache "$cache"
+write_audits '[[audits.serde]]
+version = "1.1.0"'
+expect "exception can be checked again" 0 "full-check cache matches" --all --cache "$cache"
+printf '# script change\n' >> "$repo/scripts/check-cargo-cooldown.sh"
+: > "$fixture"
+expect "script change invalidates cache" 1 "could not be reached" --all --cache "$cache"
+printf '{broken' > "$cache"
+expect "corrupt cache fails closed when registry is unavailable" 1 "could not be reached" --all --cache "$cache"
+
 setup_repo bad-argument
 status=0
 output="$(run_check --nonsense)" || status=$?
