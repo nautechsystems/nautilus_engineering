@@ -12,8 +12,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CHECK_SCRIPT_SOURCE="${REPO_ROOT}/scripts/check-cargo-cooldown.sh"
 REAL_DATE="$(command -v date)"
+REAL_COMM="$(command -v comm)"
 
-for required in git awk jq curl date grep; do
+for required in git awk jq curl date grep comm; do
   command -v "$required" > /dev/null || {
     echo "Required test command not on PATH: $required" >&2
     exit 1
@@ -173,7 +174,17 @@ exec "$REAL_DATE" "$@"
 FAKE_DATE
 chmod +x "${fake_bin}/date"
 
-cp "${fake_bin}/curl" "${fake_bin}/cargo" "$curl_only_bin"
+cat > "${fake_bin}/comm" << 'FAKE_COMM'
+#!/usr/bin/env bash
+if [[ "${LC_ALL:-}" != C ]]; then
+  echo "comm did not receive LC_ALL=C" >&2
+  exit 9
+fi
+exec "$REAL_COMM" "$@"
+FAKE_COMM
+chmod +x "${fake_bin}/comm"
+
+cp "${fake_bin}/curl" "${fake_bin}/cargo" "${fake_bin}/comm" "$curl_only_bin"
 
 fixture="${test_root}/crates.txt"
 cargo_log="${test_root}/cargo.log"
@@ -183,6 +194,7 @@ export FAKE_CARGO_LOG="$cargo_log"
 export FAKE_CURL_LOG="$curl_log"
 export REAL_DATE
 export REAL_DATE_KIND
+export REAL_COMM
 
 # Test controls must not inherit state from a developer's shell
 unset CHANGED_BASE_SHA CI
@@ -233,6 +245,22 @@ write_audits() {
   local body=${1:-}
   mkdir -p "${repo}/.supply-chain"
   printf '%s\n' "$body" > "${repo}/.supply-chain/audits.toml"
+}
+
+write_db() {
+  mkdir -p "${repo}/.supply-chain"
+  printf '%s\n' "$@" | jq -Rn '
+    [inputs | select(length > 0)] |
+    map(split("|")) |
+    map({key: (.[0] + "@" + .[1]), value: {published: .[2], verified_at: "2020-01-02T03:04:05Z"}}) |
+    from_entries |
+    {schema: 1, entries: .}
+  ' | jq -S . > "${repo}/.supply-chain/crate-dates.json"
+}
+
+commit_db() {
+  git -C "$repo" add .supply-chain/crate-dates.json
+  git -C "$repo" commit --quiet -m "record publication dates"
 }
 
 # Fresh repo with a committed baseline lock, so `git diff HEAD` sees the change.
@@ -774,6 +802,319 @@ printf '# script change\n' >> "$repo/scripts/check-cargo-cooldown.sh"
 expect "script change invalidates cache" 1 "could not be reached" --all --cache "$cache"
 printf '{broken' > "$cache"
 expect "corrupt cache fails closed when registry is unavailable" 1 "could not be reached" --all --cache "$cache"
+
+# A committed database entry satisfies the gate without any registry request.
+setup_repo db-offline
+write_db "serde|1.1.0|$old_date"
+commit_db
+write_lock "serde" "1.1.0" "0.1.0"
+: > "$fixture"
+: > "$curl_log"
+status=0
+output="$(run_check)" || status=$?
+if [[ "$status" == 0 && "$output" == *"are at least 3 days old"* &&
+  "$output" == *"Publication dates: 1 from the cooldown database, 0 from crates.io"* ]] &&
+  ! grep -Fq 'serde/1.1.0' "$curl_log"; then
+  printf 'ok   committed database entry satisfies the gate without network\n'
+else
+  printf 'FAIL offline database hit: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+# Versions missing from the database are checked online and reported.
+setup_repo db-missing
+printf 'serde 1.1.0 %s\n' "$old_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+: > "$curl_log"
+status=0
+output="$(run_check)" || status=$?
+if [[ "$status" == 0 && "$output" == *"are at least 3 days old"* &&
+  "$output" == *"not recorded in .supply-chain/crate-dates.json"* &&
+  "$output" == *"Publication dates: 0 from the cooldown database, 1 from crates.io"* ]] &&
+  grep -Fq 'serde/1.1.0' "$curl_log"; then
+  printf 'ok   unrecorded version passes via the registry and reports the hint\n'
+else
+  printf 'FAIL unrecorded version handling: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+# An entry added by the same working-tree change is re-verified online.
+setup_repo db-new-entry
+write_db "serde|1.1.0|$old_date"
+printf 'serde 1.1.0 %s\n' "$old_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+: > "$curl_log"
+status=0
+output="$(run_check)" || status=$?
+if [[ "$status" == 0 && "$output" == *"Publication dates: 0 from the cooldown database, 1 from crates.io"* &&
+  "$output" != *"disagree"* ]] && grep -Fq 'serde/1.1.0' "$curl_log"; then
+  printf 'ok   database entry added by the diff is verified against the registry\n'
+else
+  printf 'FAIL new database entry verification: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+# The comm branch needs a database committed with keys plus a key added in the
+# working tree; tokio and tokio-util collide under UTF-8 collation.
+setup_repo db-committed-extended
+write_db "tokio-util|1.0.0|$old_date"
+commit_db
+write_db "tokio-util|1.0.0|$old_date" "tokio|1.0.0|$old_date"
+printf 'tokio 1.0.0 %s\n' "$old_date" > "$fixture"
+write_lock "tokio" "1.0.0" "0.1.0"
+: > "$curl_log"
+status=0
+output="$(run_check)" || status=$?
+if [[ "$status" == 0 && "$output" == *"Publication dates: 0 from the cooldown database, 1 from crates.io"* ]] &&
+  grep -Fq 'tokio/1.0.0' "$curl_log" &&
+  ! grep -Fq 'tokio-util/1.0.0' "$curl_log"; then
+  printf 'ok   only the database key added above the committed set is verified\n'
+else
+  printf 'FAIL committed database extension: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+# A database-only addition must be verified even with no lockfile change;
+# otherwise a two-step commit could plant an unverified date.
+setup_repo db-only-entry
+write_db "serde|1.0.0|$old_date"
+commit_db
+write_db "serde|1.0.0|$old_date" "serde|1.1.0|$old_date"
+printf 'serde 1.1.0 %s\n' "$old_date" > "$fixture"
+: > "$curl_log"
+status=0
+output="$(run_check)" || status=$?
+if [[ "$status" == 0 && "$output" == *"No new registry crate versions"* ]] &&
+  grep -Fq 'serde/1.1.0' "$curl_log"; then
+  printf 'ok   database-only addition is verified without a lock change\n'
+else
+  printf 'FAIL database-only verification: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo db-only-tampered
+write_db "serde|1.0.0|$old_date"
+commit_db
+write_db "serde|1.0.0|$old_date" "serde|1.1.0|2020-01-05T00:00:00Z"
+printf 'serde 1.1.0 %s\n' "$old_date" > "$fixture"
+expect "database-only tampered entry fails without a lock change" 1 \
+  "database date(s) disagree with crates.io"
+
+setup_repo db-only-unreachable
+write_db "serde|1.0.0|$old_date"
+commit_db
+write_db "serde|1.0.0|$old_date" "serde|1.1.0|$old_date"
+: > "$fixture"
+expect "database-only addition fails closed when the registry is unreachable" 1 \
+  "could not be reached on crates.io"
+
+setup_repo db-record-corrupt
+printf '{broken' > "${repo}/.supply-chain/crate-dates.json"
+printf 'serde 1.0.0 %s\n' "$old_date" > "$fixture"
+status=0
+output="$(run_check --update-db)" || status=$?
+if [[ "$status" == 0 &&
+  "$output" == *"WARN: .supply-chain/crate-dates.json is not a valid cooldown database"* &&
+  "$output" == *"Recorded 1 publication date(s)"* ]] &&
+  [[ "$(jq -r '.entries["serde@1.0.0"].published' "${repo}/.supply-chain/crate-dates.json" 2> /dev/null)" == "$old_date" ]]; then
+  printf 'ok   update-db rebuilds a corrupt database from the registry\n'
+else
+  printf 'FAIL corrupt database rebuild: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo db-cache-invalidation
+invalidation_cache="$test_root/db-invalidation-cache"
+printf 'serde 1.0.0 %s\n' "$old_date" > "$fixture"
+expect "full check seeds the cache before the database exists" 0 \
+  "Checking 1 resolved" --all --cache "$invalidation_cache"
+write_db "serde|1.0.0|$old_date"
+: > "$fixture"
+status=0
+output="$(run_check --all --cache "$invalidation_cache")" || status=$?
+if [[ "$status" == 0 && "$output" != *"full-check cache matches"* &&
+  "$output" == *"1 from the cooldown database, 0 from crates.io"* ]]; then
+  printf 'ok   database change invalidates the full-check cache\n'
+else
+  printf 'FAIL database cache invalidation: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo fix-explicit-db
+printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+: > "$cargo_log"
+expect "fix honors an explicit database path through verification" 0 \
+  "serde 1.1.0 -> 1.0.0 (Cargo.lock)" --fix --db custom-dates.json
+
+setup_repo db-mismatch
+write_db "serde|1.1.0|2020-01-02T00:00:00Z"
+printf 'serde 1.1.0 %s\n' "$old_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+expect "a database date that disagrees with the registry fails" 1 \
+  "database date(s) disagree with crates.io"
+
+# Recorded dates are the source of truth once committed, even without network.
+setup_repo db-trusted
+write_db "serde|1.1.0|$fresh_date"
+commit_db
+write_lock "serde" "1.1.0" "0.1.0"
+: > "$fixture"
+: > "$curl_log"
+status=0
+output="$(run_check)" || status=$?
+if [[ "$status" == 1 && "$output" == *"within the 3-day cooldown"* &&
+  "$output" == *"Publication dates: 1 from the cooldown database, 0 from crates.io"* ]] &&
+  ! grep -q . "$curl_log"; then
+  printf 'ok   committed database dates are the offline source of truth\n'
+else
+  printf 'FAIL trusted database dates: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo db-full-offline
+write_db "serde|1.0.0|$old_date"
+commit_db
+: > "$fixture"
+: > "$curl_log"
+status=0
+output="$(run_check --all)" || status=$?
+if [[ "$status" == 0 && "$output" == *"Publication dates: 1 from the cooldown database, 0 from crates.io"* ]] &&
+  ! grep -q . "$curl_log"; then
+  printf 'ok   full check with a complete database needs no network\n'
+else
+  printf 'FAIL full offline check: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo db-full-partial
+cat >> "${repo}/Cargo.lock" << 'LOCK'
+
+[[package]]
+name = "anyhow"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1111111111111111111111111111111111111111111111111111111111111111"
+LOCK
+write_db "serde|1.0.0|$old_date"
+printf 'anyhow 2.0.0 %s\n' "$old_date" > "$fixture"
+: > "$curl_log"
+status=0
+output="$(run_check --all)" || status=$?
+if [[ "$status" == 0 && "$output" == *"Publication dates: 1 from the cooldown database, 1 from crates.io"* ]] &&
+  grep -Fq 'anyhow/2.0.0' "$curl_log" &&
+  ! grep -Fq 'serde/1.0.0' "$curl_log"; then
+  printf 'ok   full check fetches only versions missing from the database\n'
+else
+  printf 'FAIL partial database full check: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo db-record
+printf 'serde 1.0.0 %s\n' "$old_date" > "$fixture"
+status=0
+output="$(run_check --update-db)" || status=$?
+verified_at=$(jq -r '.entries["serde@1.0.0"].verified_at' "${repo}/.supply-chain/crate-dates.json" 2> /dev/null)
+if [[ "$status" == 0 && "$output" == *"Recorded 1 publication date(s) in .supply-chain/crate-dates.json"* ]] &&
+  [[ "$(jq -r '.entries["serde@1.0.0"].published' "${repo}/.supply-chain/crate-dates.json" 2> /dev/null)" == "$old_date" ]] &&
+  [[ "$verified_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+  printf 'ok   update-db records resolved publication dates\n'
+else
+  printf 'FAIL update-db recording: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+: > "$fixture"
+: > "$curl_log"
+status=0
+output="$(run_check --all)" || status=$?
+if [[ "$status" == 0 && "$output" == *"1 from the cooldown database, 0 from crates.io"* ]] &&
+  ! grep -q . "$curl_log"; then
+  printf 'ok   recorded dates satisfy a later offline full check\n'
+else
+  printf 'FAIL offline recheck after recording: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+status=0
+output="$(run_check --update-db)" || status=$?
+if [[ "$status" == 0 && "$output" == *"Cooldown database already matches the resolved registry versions"* ]]; then
+  printf 'ok   unchanged database is not rewritten\n'
+else
+  printf 'FAIL unchanged database rewrite: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo db-prune
+write_db "serde|1.0.0|$old_date" "serde|1.0.99|$old_date"
+printf 'serde 1.0.0 %s\n' "$old_date" > "$fixture"
+status=0
+output="$(run_check --update-db)" || status=$?
+if [[ "$status" == 0 && "$output" == *"Pruned stale entries absent from every tracked lock: 1"* &&
+  "$(jq -r '.entries | keys[]' "${repo}/.supply-chain/crate-dates.json" 2> /dev/null)" == "serde@1.0.0" ]]; then
+  printf 'ok   update-db prunes entries no lock resolves\n'
+else
+  printf 'FAIL update-db pruning: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo db-merge
+write_db "serde|0.9.0|$old_date"
+printf 'serde 1.0.0 %s\n' "$old_date" > "$fixture"
+status=0
+output="$(run_check --update-db --lock Cargo.lock)" || status=$?
+db_keys=$(jq -r '.entries | keys[]' "${repo}/.supply-chain/crate-dates.json" 2> /dev/null | LC_ALL=C sort)
+if [[ "$status" == 0 && "$output" != *"Pruned"* &&
+  "$db_keys" == $'serde@0.9.0\nserde@1.0.0' ]]; then
+  printf 'ok   update-db with a lock subset merges instead of pruning\n'
+else
+  printf 'FAIL update-db merge: exit %s\n%s\n%s\n' "$status" "$output" "$db_keys" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo db-record-failure
+: > "$fixture"
+status=0
+output="$(run_check --update-db)" || status=$?
+if [[ "$status" == 1 && "$output" == *"could not be reached on crates.io"* ]] &&
+  [[ ! -e "${repo}/.supply-chain/crate-dates.json" ]]; then
+  printf 'ok   failed update-db writes no database\n'
+else
+  printf 'FAIL failed update-db handling: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo db-conflicts
+expect "update-db cannot repair" 2 "--update-db cannot be combined" --update-db --fix
+expect "update-db cannot use a base" 2 "--update-db cannot be combined" --update-db --base HEAD
+expect "update-db cannot pair with a full check" 2 "--update-db cannot be combined" --all --update-db
+expect "update-db cannot pair with a full-check cache" 2 "--cache requires --all" \
+  --cache "$test_root/db-cache" --update-db
+
+setup_repo db-ambiguous
+mkdir -p "${repo}/supply-chain"
+: > "${repo}/supply-chain/crate-dates.json"
+: > "${repo}/.supply-chain/crate-dates.json"
+expect "ambiguous cooldown database paths fail" 2 "Both supported cooldown database paths exist"
+
+setup_repo db-corrupt
+printf '{broken' > "${repo}/.supply-chain/crate-dates.json"
+printf 'serde 1.1.0 %s\n' "$old_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+status=0
+output="$(run_check)" || status=$?
+if [[ "$status" == 0 &&
+  "$output" == *"WARN: .supply-chain/crate-dates.json is not a valid cooldown database"* &&
+  "$output" == *"Publication dates: 0 from the cooldown database, 1 from crates.io"* ]]; then
+  printf 'ok   corrupt database warns and falls back to the registry\n'
+else
+  printf 'FAIL corrupt database handling: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo db-path-validation
+expect "unsafe database path is rejected" 2 "unsafe component" --db ../crate-dates.json
+expect "absolute database path is rejected" 2 "repository-relative POSIX path" --db /tmp/crate-dates.json
+expect "directory database path is rejected" 2 "not a regular file" --db .supply-chain
+expect "empty database path is rejected" 2 "--db requires a path" --db ""
 
 setup_repo bad-argument
 status=0

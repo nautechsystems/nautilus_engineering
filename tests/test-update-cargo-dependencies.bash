@@ -10,8 +10,9 @@ UPDATE_SCRIPT="${REPO_ROOT}/scripts/update-cargo-dependencies.bash"
 CHECK_SCRIPT="${REPO_ROOT}/scripts/check-cargo-cooldown.sh"
 REAL_DATE="$(command -v date)"
 REAL_CP="$(command -v cp)"
+REAL_COMM="$(command -v comm)"
 
-for required in git awk jq date grep cmp sed; do
+for required in git awk jq date grep cmp sed comm; do
   command -v "$required" > /dev/null || {
     echo "Required test command not on PATH: $required" >&2
     exit 1
@@ -187,15 +188,26 @@ fi
 exec "$REAL_CP" "$@"
 FAKE_CP
 
-chmod +x "${fake_bin}/cargo" "${fake_bin}/cp" "${fake_bin}/curl"
+cat > "${fake_bin}/comm" << 'FAKE_COMM'
+#!/usr/bin/env bash
+if [[ "${LC_ALL:-}" != C ]]; then
+  echo "comm did not receive LC_ALL=C" >&2
+  exit 9
+fi
+exec "$REAL_COMM" "$@"
+FAKE_COMM
+
+chmod +x "${fake_bin}/cargo" "${fake_bin}/cp" "${fake_bin}/curl" "${fake_bin}/comm"
 
 fixture="${test_root}/crates.txt"
 fresh_date="$($REAL_DATE -u +%Y-%m-%dT%H:%M:%SZ)"
 old_date="2020-01-01T00:00:00Z"
-printf 'anyhow 1.0.5 %s\nanyhow 1.1.0 %s\nserde 1.0.5 %s\nserde 1.1.0 %s\n' \
-  "$old_date" "$fresh_date" "$old_date" "$fresh_date" > "$fixture"
+printf \
+  'anyhow 1.0.0 %s\nanyhow 1.0.5 %s\nanyhow 1.1.0 %s\nserde 1.0.0 %s\nserde 1.0.5 %s\nserde 1.1.0 %s\n' \
+  "$old_date" "$old_date" "$fresh_date" "$old_date" "$old_date" "$fresh_date" > "$fixture"
 export FAKE_CRATES_FIXTURE="$fixture"
 export REAL_CP
+export REAL_COMM
 
 write_root_lock() {
   local version=${1:-1.0.0}
@@ -259,11 +271,15 @@ online_precise_commands=$(awk '!/--offline/ && /--precise/ { count++ } END { pri
   "$cargo_log")
 if [[ "$status" == 0 && "$output" == *"Rolled back 2 fresh lockfile update(s)"* &&
   "$output" == *"Restored exact pre-update content for 1 lockfile"* &&
+  "$output" == *"Recorded 2 publication date(s) in .supply-chain/crate-dates.json"* &&
   "$output" == *"Cargo dependency update complete; cooldown policy enforced"* &&
   "$offline_precise_commands" == "2" && "$online_precise_commands" == "0" ]] &&
   cmp -s "${repo}/Cargo.lock" "${test_root}/expected-root-success.lock" &&
+  jq -e --arg date "$old_date" \
+    '.entries["anyhow@1.0.0"].published == $date and .entries["serde@1.0.0"].published == $date and (.entries | length) == 2' \
+    "${repo}/.supply-chain/crate-dates.json" > /dev/null &&
   [[ ! -e "${repo}/.git/nautilus-cargo-update.lock" ]]; then
-  printf 'ok   successful update rolls back fresh crates and reports completion\n'
+  printf 'ok   successful update rolls back fresh crates and records publication dates\n'
 else
   printf 'FAIL successful transactional update: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
@@ -314,6 +330,9 @@ status=0
 output=$(run_update --lock Cargo.lock) || status=$?
 if [[ "$status" == 0 ]] &&
   ! grep -Fq 'update --manifest-path nested/Cargo.toml' "$cargo_log" &&
+  [[ "$output" != *"Pruned"* ]] &&
+  jq -e '(.entries | length) == 2 and .entries["anyhow@1.0.0"] != null and .entries["serde@1.0.0"] != null' \
+    "${repo}/.supply-chain/crate-dates.json" > /dev/null &&
   cmp -s "${repo}/nested/Cargo.lock" "${test_root}/expected-nested-selected-lock.lock"; then
   printf 'ok   explicit lock selection leaves other workspaces unchanged\n'
 else
@@ -375,8 +394,8 @@ LOCK
 git -C "$repo" add Cargo.lock
 git -C "$repo" commit --quiet --amend --no-edit
 cp "${repo}/Cargo.lock" "${test_root}/expected-root-resolver-cascade.lock"
-printf 'ref-cast 1.0.27 %s\nref-cast-impl 1.0.27 %s\n' \
-  "$fresh_date" "$fresh_date" >> "$fixture"
+printf 'ref-cast 1.0.26 %s\nref-cast-impl 1.0.26 %s\nref-cast 1.0.27 %s\nref-cast-impl 1.0.27 %s\n' \
+  "$old_date" "$old_date" "$fresh_date" "$fresh_date" >> "$fixture"
 : > "$cargo_log"
 status=0
 output="$(FAKE_CARGO_CASCADE_REF_CAST=1 run_update)" || status=$?
@@ -476,6 +495,48 @@ if [[ "$status" != 0 && "$output" == *"Could not restore Cargo.lock"* &&
 else
   printf 'FAIL atomic restoration failure handling: exit %s\n%s\n' \
     "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo db-write-failure
+chmod 500 "${repo}/.supply-chain"
+status=0
+output=$(run_update) || status=$?
+chmod 700 "${repo}/.supply-chain"
+if [[ "$status" != 0 && "$output" == *"Cargo cooldown database update failed"* &&
+  "$output" == *"Cargo dependency update restored the pre-update lockfiles"* ]] &&
+  cmp -s "${repo}/Cargo.lock" "${test_root}/expected-root-db-write-failure.lock"; then
+  printf 'ok   failed database write restores the pre-update lockfile\n'
+else
+  printf 'FAIL failed database write handling: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+# The recording step is a full-scope gate, so a version that already violated
+# the cooldown when it was committed fails the update and restores the locks.
+setup_repo preexisting-fresh
+cat >> "${repo}/Cargo.lock" << 'LOCK'
+
+[[package]]
+name = "left-alone"
+version = "9.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4444444444444444444444444444444444444444444444444444444444444444444"
+LOCK
+git -C "$repo" add Cargo.lock
+git -C "$repo" commit --quiet --amend --no-edit
+cp "${repo}/Cargo.lock" "${test_root}/expected-root-preexisting-fresh.lock"
+printf 'left-alone 9.0.0 %s\n' "$fresh_date" >> "$fixture"
+: > "$cargo_log"
+status=0
+output=$(run_update) || status=$?
+if [[ "$status" != 0 && "$output" == *"Cargo cooldown database update failed"* &&
+  "$output" == *"within the 3-day cooldown"* &&
+  "$output" == *"Cargo dependency update restored the pre-update lockfiles"* ]] &&
+  cmp -s "${repo}/Cargo.lock" "${test_root}/expected-root-preexisting-fresh.lock"; then
+  printf 'ok   full-scope recording gate fails on a pre-existing fresh version\n'
+else
+  printf 'FAIL pre-existing fresh version handling: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
 fi
 

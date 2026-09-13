@@ -226,7 +226,9 @@ bash scripts/check-cargo-cooldown.sh --all --cache target/.cargo-cooldown.json
 The full check covers every tracked `Cargo.lock`, including versions already committed or pulled
 from another branch. It requires no Git comparison base or full checkout history. Keep the
 diff-based mode for dependency-update and pre-commit feedback; an empty diff does not prove that
-resolved dependencies satisfy the cooldown.
+resolved dependencies satisfy the cooldown. With a committed cooldown database, the full check
+reads recorded publication dates without registry requests, so the database is the trust anchor
+for those dates.
 
 Wire the gate into build, check, lint, test, documentation, benchmark, and code-generation commands
 that can compile Rust, including direct CI commands and source-install paths. Stub generation may
@@ -245,6 +247,16 @@ The cache records only successful full checks. Unchanged lockfiles, policy, audi
 content allow an early return without registry requests; a change to any of them requires another
 full check. Failed checks are not cached. Keep the cache as local verification state and never
 restore it from an untrusted source.
+
+Commit the cooldown database (`.supply-chain/crate-dates.json`) beside the audits so the gate reads
+publication dates without registry requests. Registry publication dates are immutable, so recorded
+entries are trusted offline; entries added by the same change that bumps a lockfile are re-verified
+against crates.io, and a recorded date that disagrees with the registry fails the gate. The
+dependency-update transaction records dates for every change it accepts and ends with the same
+full-scope check as the compilation gate, so a version that already violated the cooldown when it
+was committed also fails the update. Run `bash scripts/check-cargo-cooldown.sh --update-db` after
+any manual lockfile edit to reconcile the database, which also prunes entries no tracked lock
+resolves.
 
 Cooldown reduces exposure to newly published malicious registry releases. It does not certify
 older releases, sandbox build scripts, or vet Git and local path dependencies.
