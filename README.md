@@ -121,10 +121,15 @@ make check-tool-updates
 ```
 
 `make outdated` is an alias. The report includes each latest release's UTC timestamp and age. In a
-terminal, releases from today are red, releases from the prior two days are orange, and older
-releases are uncolored. Each `tools.toml` entry names its release source in `releases`, and
-`make check` verifies the field stays complete. Update a pin here first; consumers adopt the
-reviewed commit.
+terminal, releases from today are red, releases from the rest of the cooldown window are orange,
+and older releases are uncolored. For each differing pin, the summary names its upgrade target:
+the newest upstream release past the cooldown window (`COOLDOWN_DAYS`, default 3 days). A target
+can be older than the latest release when the latest release is still within the cooldown.
+Differing pins with no newer release past the cooldown are cooldown holds, which do not fail the
+check; a pin whose latest upstream release is past the cooldown but not newer than the pin is a
+mismatch, which fails the check, as does a failed upgrade-target lookup. Each `tools.toml` entry
+names its release source in `releases`, and `make check` verifies the field stays complete. Update
+a pin here first; consumers adopt the reviewed commit.
 
 ### CI validation
 

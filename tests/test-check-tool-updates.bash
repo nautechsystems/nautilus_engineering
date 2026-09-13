@@ -22,6 +22,8 @@ mkdir -p "$fake_bin"
 
 cat > "${fake_bin}/curl" << 'FAKE_CURL'
 #!/usr/bin/env bash
+# set -e and pipefail omitted: fixture lookups fail freely before the explicit
+# exit-22 guards handle them
 set -u
 url=""
 for arg in "$@"; do
@@ -29,54 +31,106 @@ for arg in "$@"; do
     https://*) url="$arg" ;;
   esac
 done
-lookup() {
-  grep -E "^$1 $2 " "$FAKE_RELEASES_FIXTURE" 2> /dev/null | awk '{print $3}'
+line() {
+  grep -E "^$1 $2 " "$FAKE_RELEASES_FIXTURE" 2> /dev/null
 }
-published() {
-  grep -E "^$1 $2 " "$FAKE_RELEASES_FIXTURE" 2> /dev/null | awk '{print $4}'
+latest_version() {
+  line "$1" "$2" | awk '{print $3}'
+}
+latest_released() {
+  line "$1" "$2" | awk '{print $4}'
+}
+time_of() {
+  line "$1" "$2" | awk -v version="$3" '{
+    for (i = 3; i <= NF; i += 2) if ($i == version) print $(i + 1)
+  }'
+}
+tag_version_at() {
+  grep -E "^$1 " "$FAKE_TAGS_FIXTURE" 2> /dev/null |
+    awk -v n="$2" 'NR == n { sub(/^v/, "", $2); sub(/\^\{\}$/, "", $2); print $2 }'
 }
 case "$url" in
   https://crates.io/api/v1/crates/*)
-    version="$(lookup crates "${url##*/}")"
-    released="$(published crates "${url##*/}")"
+    package="${url##*/}"
+    version="$(latest_version crates "$package")"
+    released="$(latest_released crates "$package")"
     [[ -n "$version" && -n "$released" ]] || exit 22
-    printf '{"crate":{"max_stable_version":"%s"},"versions":[{"num":"%s","created_at":"%s"}]}\n' \
-      "$version" "$version" "$released"
+    versions=$(line crates "$package" | awk '{
+      printf "["
+      for (i = 3; i <= NF; i += 2) {
+        printf "%s{\"num\":\"%s\",\"created_at\":\"%s\",\"yanked\":false}", \
+          ((i > 3) ? "," : ""), $i, $(i + 1)
+      }
+      printf "]"
+    }')
+    printf '{"crate":{"max_stable_version":"%s"},"versions":%s}\n' "$version" "$versions"
     ;;
   https://pypi.org/pypi/*/json)
     package="${url%/json}"
-    version="$(lookup pypi "${package##*/}")"
-    released="$(published pypi "${package##*/}")"
+    package="${package##*/}"
+    version="$(latest_version pypi "$package")"
+    released="$(latest_released pypi "$package")"
     [[ -n "$version" && -n "$released" ]] || exit 22
-    printf '{"info":{"version":"%s"},"urls":[{"upload_time_iso_8601":"%s"}]}\n' \
-      "$version" "$released"
+    releases=$(line pypi "$package" | awk '{
+      printf "{"
+      separator = ""
+      for (i = 3; i <= NF; i += 2) {
+        printf "%s\"%s\":[{\"upload_time_iso_8601\":\"%s\"}]", separator, $i, $(i + 1)
+        separator = ","
+      }
+      printf "}"
+    }')
+    printf '{"info":{"version":"%s"},"urls":[{"upload_time_iso_8601":"%s"}],"releases":%s}\n' \
+      "$version" "$released" "$releases"
     ;;
   https://registry.npmjs.org/*)
     package="${url##*/}"
-    version="$(lookup npm "${package##*/}")"
-    released="$(published npm "${package##*/}")"
+    version="$(latest_version npm "$package")"
+    released="$(latest_released npm "$package")"
     [[ -n "$version" && -n "$released" ]] || exit 22
-    printf '{"dist-tags":{"latest":"%s"},"time":{"%s":"%s"}}\n' \
-      "$version" "$version" "$released"
+    times=$(line npm "$package" | awk '{
+      printf "{"
+      for (i = 3; i <= NF; i += 2) {
+        printf "%s\"%s\":\"%s\"", ((i > 3) ? "," : ""), $i, $(i + 1)
+      }
+      printf "}"
+    }')
+    printf '{"dist-tags":{"latest":"%s"},"time":%s}\n' "$version" "$times"
     ;;
   https://api.github.com/repos/*/releases/latest)
     package="${url#https://api.github.com/repos/}"
-    version="$(lookup github "${package%/releases/latest}")"
-    released="$(published github "${package%/releases/latest}")"
+    package="${package%/releases/latest}"
+    version="$(latest_version github "$package")"
+    released="$(latest_released github "$package")"
     [[ -n "$version" && -n "$released" ]] || exit 22
     printf '{"tag_name":"v%s","published_at":"%s"}\n' "$version" "$released"
+    ;;
+  https://api.github.com/repos/*/releases?per_page=100)
+    package="${url#https://api.github.com/repos/}"
+    package="${package%%/releases*}"
+    [[ "${FAKE_RELEASES_LIST_FAIL:-}" == "$package" ]] && exit 22
+    line github "$package" | awk '{
+      printf "["
+      for (i = 3; i <= NF; i += 2) {
+        printf "%s{\"tag_name\":\"v%s\",\"published_at\":\"%s\",\"prerelease\":false}", \
+          ((i > 3) ? "," : ""), $i, $(i + 1)
+      }
+      printf "]"
+    }'
     ;;
   https://api.github.com/repos/*/git/tags/*)
     path="${url#https://api.github.com/repos/}"
     package="${path%/git/tags/*}"
-    released="$(published github-tags "$package")"
+    version="$(tag_version_at "$package" "$((10#${url##*/}))")"
+    released="$(time_of github-tags "$package" "$version")"
     [[ -n "$released" ]] || exit 22
     printf '{"tagger":{"date":"%s"}}\n' "$released"
     ;;
   https://api.github.com/repos/*/commits/*)
     path="${url#https://api.github.com/repos/}"
     package="${path%/commits/*}"
-    released="$(published github-tags "$package")"
+    version="$(tag_version_at "$package" "$((10#${url##*/}))")"
+    released="$(time_of github-tags "$package" "$version")"
     [[ -n "$released" ]] || exit 22
     printf '{"commit":{"committer":{"date":"%s"}}}\n' "$released"
     ;;
@@ -89,6 +143,7 @@ chmod +x "${fake_bin}/curl"
 
 cat > "${fake_bin}/git" << 'FAKE_GIT'
 #!/usr/bin/env bash
+# set -e omitted: no fixture match is handled by the explicit exit statuses
 set -u
 if [[ "${1:-}" == "ls-remote" && "${2:-}" == "--tags" ]]; then
   [[ "${GIT_TERMINAL_PROMPT:-}" == 0 ]] || exit 2
@@ -136,11 +191,14 @@ releases = "github-tags:example/epsilon"
 TOML
 }
 
+# Each fixture line lists the latest release first, then any older history as
+# additional "version time" pairs.
 write_fixture() {
   local alpha_version=${1:-1.2.3}
   local alpha_released=${2:-$older_release}
+  local alpha_history=${3:-}
   cat > "$fixture" << FIXTURE
-crates alpha-cli ${alpha_version} ${alpha_released}
+crates alpha-cli ${alpha_version} ${alpha_released} ${alpha_history}
 pypi beta 2.0.0 ${older_release}
 npm gamma 0.11.0.1 ${older_release}
 github example/delta 3.1.0 ${older_release}
@@ -203,12 +261,16 @@ expect_report "all pins current across every release source" 0 \
   "All 5 tool pin(s) match their latest upstream releases"
 expect_absent "current report has no outdated flag" "** OUTDATED"
 
-write_fixture 1.3.0 "$recent_release"
-expect_report "outdated crates pin is flagged" 1 \
+write_fixture 1.3.0 "$recent_release" "1.2.3 $older_release"
+expect_report "differing pin with no newer release past the cooldown is a hold" 0 \
   "alpha                1.2.3        1.3.0" \
-  "1d 12h  ** OUTDATED" \
-  "1 tool pin(s) differ from the latest upstream release:" \
-  "alpha 1.2.3 -> 1.3.0"
+  "1d 12h  ** RECENT" \
+  $'\n\nCooldown holds (1): every newer release is within the 3-day cooldown' \
+  "alpha 1.2.3 -> 1.3.0 (1d 12h within cooldown)" \
+  "delta                3.1.0        3.1.0" \
+  "epsilon              0.10.0       0.10.0"
+expect_absent "hold report has no outdated flag" "** OUTDATED"
+expect_absent "hold report does not claim all pins match" "All 5 tool pin(s) match"
 
 orange=$(printf '\033[38;5;208m')
 output=$(
@@ -225,6 +287,163 @@ if [[ "$output" == *"${orange}  1d 12h"* ]]; then
   printf 'ok   %s\n' "release within three days is orange in a terminal"
 else
   printf 'FAIL %s\n%s\n' "release within three days is orange in a terminal" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+write_fixture 1.3.0 "$recent_release" "1.2.11 $older_release"
+expect_report "newest past-cooldown release is the upgrade target" 1 \
+  "alpha                1.2.3        1.3.0" \
+  "1d 12h  ** RECENT" \
+  $'\n\nUpgradable pins (1): newest release past the 3-day cooldown' \
+  "alpha 1.2.3 -> 1.2.11 (latest 1.3.0 within cooldown)"
+expect_absent "target report has no hold section" "Cooldown holds"
+
+write_fixture
+sed "s|^pypi beta 2.0.0 .*|pypi beta 2.1.0 ${recent_release} 2.0.5 ${older_release}|" \
+  "$fixture" > "${fixture}.tmp"
+mv "${fixture}.tmp" "$fixture"
+expect_report "pypi history yields the upgrade target" 1 \
+  "beta                 2.0.0        2.1.0" \
+  "beta 2.0.0 -> 2.0.5 (latest 2.1.0 within cooldown)"
+
+write_fixture
+sed "s|^npm gamma 0.11.0.1 .*|npm gamma 0.12.0 ${recent_release} 0.11.5 ${older_release}|" \
+  "$fixture" > "${fixture}.tmp"
+mv "${fixture}.tmp" "$fixture"
+expect_report "npm history yields the upgrade target" 1 \
+  "gamma                0.11.0.1     0.12.0" \
+  "gamma 0.11.0.1 -> 0.11.5 (latest 0.12.0 within cooldown)"
+
+write_fixture
+sed "s|^github example/delta 3.1.0 .*|github example/delta 3.3.0 ${recent_release} 3.2.0 ${older_release}|" \
+  "$fixture" > "${fixture}.tmp"
+mv "${fixture}.tmp" "$fixture"
+expect_report "github release history yields the upgrade target" 1 \
+  "delta                3.1.0        3.3.0" \
+  "delta 3.1.0 -> 3.2.0 (latest 3.3.0 within cooldown)"
+
+write_fixture
+sed "s|^github-tags example/epsilon 0.10.0 .*|github-tags example/epsilon 0.11.0 ${recent_release} 0.10.5 ${older_release} 0.10.0 ${older_release}|" \
+  "$fixture" > "${fixture}.tmp"
+mv "${fixture}.tmp" "$fixture"
+cat > "$tags_fixture" << 'FIXTURE'
+example/epsilon v0.9.0
+example/epsilon v0.10.0
+example/epsilon v0.10.0^{}
+example/epsilon v0.10.5
+example/epsilon v0.10.5^{}
+example/epsilon v0.11.0
+example/epsilon v0.11.0^{}
+FIXTURE
+expect_report "github tag walk yields the upgrade target" 1 \
+  "epsilon              0.10.0       0.11.0" \
+  "epsilon 0.10.0 -> 0.10.5 (latest 0.11.0 within cooldown)"
+
+write_catalog
+write_fixture
+cat >> "${test_root}/tools.toml" << 'TOML'
+
+[eta]
+version = "1.0.0.0.10"
+releases = "crates:eta-cli"
+TOML
+echo "crates eta-cli 1.0.0.0.20 ${recent_release} 1.0.0.0.2 ${older_release}" >> "$fixture"
+expect_report "five-segment pins compare beyond four sort keys" 0 \
+  "eta                  1.0.0.0.10   1.0.0.0.20" \
+  "eta 1.0.0.0.10 -> 1.0.0.0.20 (1d 12h within cooldown)"
+expect_absent "five-segment hold is not an upgrade target" "eta 1.0.0.0.10 -> 1.0.0.0.2 (latest"
+
+write_catalog
+write_fixture
+sed "s|^crates alpha-cli 1.2.3 .*|crates alpha-cli 1.1.0 ${older_release}|" \
+  "$fixture" > "${fixture}.tmp"
+mv "${fixture}.tmp" "$fixture"
+expect_report "pin ahead of upstream is a mismatch" 1 \
+  "alpha                1.2.3        1.1.0" \
+  "5d 12h  ** OUTDATED" \
+  "Pin mismatches (1): latest upstream release is not newer than the pin" \
+  "alpha 1.2.3 (latest 1.1.0 is not newer)"
+expect_absent "mismatch is not a cooldown hold" "Cooldown holds"
+
+write_fixture
+sed "s|^pypi beta 2.0.0 .*|pypi beta 2.0.0rc1 ${older_release} 2.0.5 ${older_release}|" \
+  "$fixture" > "${fixture}.tmp"
+mv "${fixture}.tmp" "$fixture"
+expect_report "non-numeric latest gets a neutral target suffix" 1 \
+  "beta                 2.0.0        2.0.0rc1" \
+  "5d 12h  ** OUTDATED" \
+  "beta 2.0.0 -> 2.0.5 (latest 2.0.0rc1)"
+expect_absent "neutral suffix does not claim a cooldown" "within cooldown"
+
+write_fixture
+sed "s|^github-tags example/epsilon 0.10.0 .*|github-tags example/epsilon 0.11.0 ${recent_release} 0.10.0 ${older_release}|" \
+  "$fixture" > "${fixture}.tmp"
+mv "${fixture}.tmp" "$fixture"
+cat > "$tags_fixture" << 'FIXTURE'
+example/epsilon v0.9.0
+example/epsilon v0.10.0
+example/epsilon v0.10.0^{}
+example/epsilon v0.10.5
+example/epsilon v0.10.5^{}
+example/epsilon v0.11.0
+example/epsilon v0.11.0^{}
+FIXTURE
+expect_report "failed tag date fails the target lookup" 1 \
+  "epsilon              0.10.0       0.11.0" \
+  "FAIL: failed release lookups (1)" \
+  "epsilon: upgrade-target lookup failed at github-tags:example/epsilon"
+expect_absent "failed tag lookup does not claim a cooldown hold" \
+  "epsilon 0.10.0 -> 0.11.0 (1d 12h within cooldown)"
+
+write_fixture
+sed "s|^github example/delta 3.1.0 .*|github example/delta 3.3.0 ${recent_release} 3.2.0 ${older_release}|" \
+  "$fixture" > "${fixture}.tmp"
+mv "${fixture}.tmp" "$fixture"
+status=0
+output=$(PATH="${fake_bin}:$PATH" FAKE_RELEASES_LIST_FAIL=example/delta \
+  bash "${test_root}/scripts/check-tool-updates.bash" 2>&1) ||
+  status=$?
+if [[ "$status" == 1 &&
+  "$output" == *"FAIL: failed release lookups (1)"* &&
+  "$output" == *"delta: upgrade-target lookup failed at github:example/delta"* &&
+  "$output" == *"delta                3.1.0        3.3.0"* &&
+  "$output" != *"delta 3.1.0 -> 3.3.0"* &&
+  "$output" != *"No action needed"* ]]; then
+  printf 'ok   %s\n' "failed release list fails the target lookup"
+else
+  printf 'FAIL %s: exit %s\n%s\n' "failed release list fails the target lookup" "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+write_fixture 1.3.0 "$older_release"
+expect_report "differing pin past the cooldown can be upgraded" 1 \
+  "5d 12h  ** OUTDATED" \
+  "Upgradable pins (1): newest release past the 3-day cooldown" \
+  "alpha 1.2.3 -> 1.3.0"
+expect_absent "upgradeable report has no recent flag" "** RECENT"
+
+status=0
+output=$(PATH="${fake_bin}:$PATH" COOLDOWN_DAYS=7 \
+  bash "${test_root}/scripts/check-tool-updates.bash" 2>&1) ||
+  status=$?
+if [[ "$status" == 0 &&
+  "$output" == *"5d 12h  ** RECENT"* &&
+  "$output" == *"within the 7-day cooldown"* &&
+  "$output" == *"alpha 1.2.3 -> 1.3.0 (5d 12h within cooldown)"* ]]; then
+  printf 'ok   %s\n' "cooldown window is configurable"
+else
+  printf 'FAIL %s: exit %s\n%s\n' "cooldown window is configurable" "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+status=0
+output=$(PATH="${fake_bin}:$PATH" COOLDOWN_DAYS=soon \
+  bash "${test_root}/scripts/check-tool-updates.bash" 2>&1) ||
+  status=$?
+if [[ "$status" == 2 && "$output" == *"COOLDOWN_DAYS must be a non-negative integer: soon"* ]]; then
+  printf 'ok   %s\n' "invalid cooldown window is a usage error"
+else
+  printf 'FAIL %s: exit %s\n%s\n' "invalid cooldown window is a usage error" "$status" "$output" >&2
   failures=$((failures + 1))
 fi
 
@@ -248,7 +467,7 @@ grep -v '^pypi beta ' "$fixture" > "${fixture}.tmp"
 mv "${fixture}.tmp" "$fixture"
 expect_report "unreachable release source fails the report" 1 \
   "beta                 2.0.0        LOOKUP FAILED" \
-  "FAIL: 1 release lookup(s) failed:" \
+  $'\n\nFAIL: failed release lookups (1)' \
   "beta: no release found at pypi:beta"
 
 write_fixture
@@ -260,6 +479,7 @@ releases = "svn:zeta"
 TOML
 expect_report "unsupported release source fails the report" 1 \
   "zeta                 1.0.0        INVALID RELEASE SOURCE" \
+  "FAIL: invalid catalog entries (1)" \
   "zeta: unsupported release source svn:zeta"
 
 write_catalog
