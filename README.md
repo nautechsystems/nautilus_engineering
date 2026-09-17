@@ -120,9 +120,11 @@ Report cataloged tool pins whose upstream has a newer release with:
 make check-tool-updates
 ```
 
-`make outdated` is an alias. The report includes each latest release's UTC timestamp and age. In a
-terminal, releases from today are red, releases from the rest of the cooldown window are orange,
-and older releases are uncolored. For each differing pin, the summary names its upgrade target:
+`make outdated` is an alias. The report includes each latest release's UTC timestamp and age. When
+that latest release is still within the cooldown, following rows list every newer release between
+the pin and latest without repeating the tool name. In a terminal, releases from today are red,
+releases from the rest of the cooldown window are orange, and older releases are uncolored. For each
+differing pin, the summary names its upgrade target:
 the newest upstream release past the cooldown window (`COOLDOWN_DAYS`, default 3 days). A target
 can be older than the latest release when the latest release is still within the cooldown.
 Differing pins with no newer release past the cooldown are cooldown holds, which do not fail the

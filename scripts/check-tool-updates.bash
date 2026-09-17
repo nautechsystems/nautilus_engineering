@@ -14,15 +14,18 @@
 # not change tools.toml. For each differing pin, the summary names the newest
 # upstream release past the COOLDOWN_DAYS adoption cooldown (default 3 days)
 # as that pin's upgrade target; a target can be older than the latest release
-# when the latest release is still within the cooldown. A differing pin whose
-# latest release is within the cooldown and has no newer release past it is a
-# cooldown hold, which does not fail the check. A differing pin whose latest
-# release is past the cooldown but not newer than the pin is a pin mismatch,
-# which fails the check, as does a failed upgrade-target lookup. GitHub
-# release targets consider the most recent 100 releases, and github-tags
-# targets date each newer tag on demand. Exits 0 when every pin matches its
-# latest upstream release or every differing pin is a cooldown hold, 1 when a
-# pin has an upgrade target or a lookup fails, and 2 on a usage error.
+# when the latest release is still within the cooldown. When that latest
+# release is still within the cooldown, the table lists every newer release
+# between the pin and latest on following rows without repeating the tool name.
+# A differing pin whose latest release is within the cooldown and has no newer
+# release past it is a cooldown hold, which does not fail the check. A
+# differing pin whose latest release is past the cooldown but not newer than
+# the pin is a pin mismatch, which fails the check, as does a failed
+# upgrade-target lookup. GitHub release targets consider the most recent 100
+# releases, and github-tags targets date each newer tag on demand. Exits 0 when
+# every pin matches its latest upstream release or every differing pin is a
+# cooldown hold, 1 when a pin has an upgrade target or a lookup fails, and 2
+# on a usage error.
 
 set -euo pipefail
 
@@ -38,6 +41,22 @@ if ! [[ "$COOLDOWN_DAYS" =~ ^[0-9]+$ ]]; then
 fi
 RELEASE_SOURCE_PATTERN='^((crates|npm|pypi):[A-Za-z0-9][A-Za-z0-9._-]*|(github|github-tags):[A-Za-z0-9._-]+/[A-Za-z0-9._-]+)$'
 JQ_EPOCH_DEF='def epoch: sub("\\+00:00$"; "Z") | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;'
+# shellcheck disable=SC2016  # $a and $b are jq parameters
+JQ_VERSION_DEF='
+def version_nums: split(".") | map(tonumber);
+def dotted_numeric: type == "string" and test("^[0-9]+(\\.[0-9]+)*$");
+def version_gt($a; $b):
+  if ($a | dotted_numeric) and ($b | dotted_numeric) then
+    ($a | version_nums) as $an
+    | ($b | version_nums) as $bn
+    | [range(0; ([($an | length), ($bn | length)] | max))]
+    | map(($an[.] // 0) - ($bn[.] // 0))
+    | map(select(. != 0))
+    | (.[0] // 0) > 0
+  else
+    false
+  end;
+'
 
 for required in awk curl git jq; do
   command -v "$required" > /dev/null || {
@@ -92,13 +111,14 @@ fetch_json() {
 release_info() {
   local source=$1 pinned=$2 cutoff_epoch=$3
   local registry package latest_info latest published adoptable target_failed
+  local target_info extra
   registry=${source%%:*}
   package=${source#*:}
   case "$registry" in
     crates)
       fetch_json "https://crates.io/api/v1/crates/${package}" |
-        jq -r --argjson cutoff "$cutoff_epoch" '
-          '"${JQ_EPOCH_DEF}"'
+        jq -r --argjson cutoff "$cutoff_epoch" --arg pinned "$pinned" '
+          '"${JQ_EPOCH_DEF}${JQ_VERSION_DEF}"'
           .crate.max_stable_version as $latest
           | [$latest,
              ([.versions[] | select(.num == $latest) | .created_at][0] // ""),
@@ -110,6 +130,17 @@ release_info() {
               | max_by(.num | split(".") | map(tonumber))
               | .num // ""),
              ""]
+            + ([.versions[]
+                | select(.yanked | not)
+                | select(.num | test("^[0-9]+(\\.[0-9]+)*$"))
+                | select(.created_at != null)
+                | select(.num != $latest)
+                | select(version_gt(.num; $pinned))
+                | {ver: .num, t: .created_at}]
+               | sort_by(.ver | split(".") | map(tonumber))
+               | reverse
+               | map([.ver, .t])
+               | add // [])
             | join("|")
         '
       ;;
@@ -120,19 +151,26 @@ release_info() {
       IFS="$tab" read -r latest published <<< "$latest_info"
       adoptable=""
       target_failed=""
-      if ! adoptable=$(github_release_target "$package" "$pinned" "$latest" "$published" "$cutoff_epoch"); then
+      extra=""
+      if ! target_info=$(github_release_target "$package" "$pinned" "$latest" "$published" "$cutoff_epoch"); then
         adoptable=""
         target_failed=1
+      else
+        IFS='|' read -r adoptable extra <<< "$target_info"
       fi
-      printf '%s|%s|%s|%s\n' "$latest" "$published" "$adoptable" "$target_failed"
+      printf '%s|%s|%s|%s' "$latest" "$published" "$adoptable" "$target_failed"
+      if [[ -n "$extra" ]]; then
+        printf '|%s' "$extra"
+      fi
+      printf '\n'
       ;;
     github-tags)
       github_tag_release "$package" "$pinned" "$cutoff_epoch"
       ;;
     npm)
       fetch_json "https://registry.npmjs.org/${package}" |
-        jq -r --argjson cutoff "$cutoff_epoch" '
-          '"${JQ_EPOCH_DEF}"'
+        jq -r --argjson cutoff "$cutoff_epoch" --arg pinned "$pinned" '
+          '"${JQ_EPOCH_DEF}${JQ_VERSION_DEF}"'
           .["dist-tags"].latest as $latest
           | [$latest,
              (.time[$latest] // ""),
@@ -143,13 +181,23 @@ release_info() {
               | max_by(.key | split(".") | map(tonumber))
               | .key // ""),
              ""]
+            + ([.time | to_entries[]
+                | select(.key | test("^[0-9]+(\\.[0-9]+)*$"))
+                | select(.value != null)
+                | select(.key != $latest)
+                | select(version_gt(.key; $pinned))
+                | {ver: .key, t: .value}]
+               | sort_by(.ver | split(".") | map(tonumber))
+               | reverse
+               | map([.ver, .t])
+               | add // [])
             | join("|")
         '
       ;;
     pypi)
       fetch_json "https://pypi.org/pypi/${package}/json" |
-        jq -r --argjson cutoff "$cutoff_epoch" '
-          '"${JQ_EPOCH_DEF}"'
+        jq -r --argjson cutoff "$cutoff_epoch" --arg pinned "$pinned" '
+          '"${JQ_EPOCH_DEF}${JQ_VERSION_DEF}"'
           .info.version as $latest
           | [$latest,
              ([.urls[]? | .upload_time_iso_8601] | min // ""),
@@ -160,6 +208,16 @@ release_info() {
               | max_by(.key | split(".") | map(tonumber))
               | .key // ""),
              ""]
+            + ([.releases | to_entries[]
+                | select(.key | test("^[0-9]+(\\.[0-9]+)*$"))
+                | select(.value | length > 0)
+                | select(.key != $latest)
+                | select(version_gt(.key; $pinned))
+                | {ver: .key, t: (.value | map(.upload_time_iso_8601) | min)}]
+               | sort_by(.ver | split(".") | map(tonumber))
+               | reverse
+               | map([.ver, .t])
+               | add // [])
             | join("|")
         '
       ;;
@@ -176,20 +234,34 @@ github_release_target() {
     return 0
   fi
   fetch_json "https://api.github.com/repos/${package}/releases?per_page=100" |
-    jq -r --argjson cutoff "$cutoff_epoch" '
-      '"${JQ_EPOCH_DEF}"'
-      [.[]
-        | select(.prerelease // false | not)
-        | select(.tag_name | sub("^v"; "") | test("^[0-9]+(\\.[0-9]+)*$"))
-        | select(((.published_at // .created_at // "") | epoch) <= $cutoff)]
-      | max_by(.tag_name | sub("^v"; "") | split(".") | map(tonumber))
-      | (.tag_name | sub("^v"; "")) // ""
+    jq -r --argjson cutoff "$cutoff_epoch" --arg latest "$latest" --arg pinned "$pinned" '
+      '"${JQ_EPOCH_DEF}${JQ_VERSION_DEF}"'
+      def stable:
+        select(.prerelease // false | not)
+        | select(.tag_name | sub("^v"; "") | test("^[0-9]+(\\.[0-9]+)*$"));
+      def tag_version: .tag_name | sub("^v"; "");
+      [.[] | stable] as $rels
+      | ([$rels[]
+          | select(((.published_at // .created_at // "") | epoch) <= $cutoff)]
+         | max_by(tag_version | split(".") | map(tonumber)) // null) as $adopt
+      | [($adopt | if . == null then "" else tag_version end)]
+        + ([$rels[]
+            | select(tag_version != $latest)
+            | select(version_gt(tag_version; $pinned))
+            | {ver: tag_version, t: (.published_at // .created_at // "")}]
+           | map(select(.t != ""))
+           | sort_by(.ver | split(".") | map(tonumber))
+           | reverse
+           | map([.ver, .t])
+           | add // [])
+        | join("|")
     '
 }
 
 github_tag_release() {
   local package=$1 pinned=$2 cutoff_epoch=$3
   local refs versions latest published adoptable target_failed latest_epoch
+  local history newer_tag newer_published
   refs=$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "https://github.com/${package}") || return 1
   versions=$(printf '%s\n' "$refs" | github_tag_versions)
   [[ -n "$versions" ]] || return 1
@@ -198,17 +270,34 @@ github_tag_release() {
   [[ -n "$published" ]] || return 1
   adoptable=""
   target_failed=""
+  history=""
   if [[ "$latest" != "$pinned" ]]; then
     if latest_epoch=$(timestamp_epoch "$published"); then
       if ((latest_epoch <= cutoff_epoch)); then
         adoptable=$latest
-      elif ! adoptable=$(github_tags_target "$package" "$pinned" "$cutoff_epoch" "$refs" "$versions"); then
-        adoptable=""
-        target_failed=1
+      else
+        if ! adoptable=$(github_tags_target "$package" "$pinned" "$cutoff_epoch" "$refs" "$versions"); then
+          adoptable=""
+          target_failed=1
+        fi
+        while IFS= read -r newer_tag; do
+          [[ "$newer_tag" == "$latest" ]] && continue
+          version_newer "$newer_tag" "$pinned" || break
+          newer_published=$(github_tag_published "$package" "$newer_tag" "$refs") || continue
+          if [[ -n "$history" ]]; then
+            history="${history}|${newer_tag}|${newer_published}"
+          else
+            history="${newer_tag}|${newer_published}"
+          fi
+        done <<< "$versions"
       fi
     fi
   fi
-  printf '%s|%s|%s|%s\n' "$latest" "$published" "$adoptable" "$target_failed"
+  printf '%s|%s|%s|%s' "$latest" "$published" "$adoptable" "$target_failed"
+  if [[ -n "$history" ]]; then
+    printf '|%s' "$history"
+  fi
+  printf '\n'
 }
 
 github_tag_versions() {
@@ -298,6 +387,31 @@ format_age() {
   printf '%3dd %2dh' "$days" "$hours"
 }
 
+print_release_row() {
+  local name=$1 pinned=$2 latest=$3 published=$4 flag=$5
+  local released age age_days age_color="" age_reset=""
+  age=$(format_age "$published" "$now") || return 1
+  released=${published%%.*}
+  released=${released%Z}
+  released=${released%+00:00}
+  released=${released/T/ }
+  if [[ "$age" == "future" ]]; then
+    age_days=-1
+  else
+    age_days=${age%%d*}
+  fi
+  if ((age_days == 0)); then
+    age_color=$color_red
+  elif ((age_days >= 0 && age_days < COOLDOWN_DAYS)); then
+    age_color=$color_orange
+  fi
+  if [[ -n "$age_color" ]]; then
+    age_reset=$color_reset
+  fi
+  printf '%-20s %-12s %-12s %-20s ' "$name" "$pinned" "$latest" "$released"
+  printf '%s%s%s%s\n' "$age_color" "$age" "$age_reset" "$flag"
+}
+
 count=$(printf '%s\n' "$entries" | wc -l | tr -d '[:space:]')
 echo "Checking ${count} cataloged tool pin(s) against upstream releases"
 echo
@@ -340,7 +454,11 @@ while IFS=' ' read -r name version source; do
     lookup_lines+=("${name}: no release found at ${source}")
     continue
   fi
-  IFS='|' read -r latest published adoptable target_failed <<< "$release"
+  IFS='|' read -r -a release_fields <<< "$release"
+  latest=${release_fields[0]:-}
+  published=${release_fields[1]:-}
+  adoptable=${release_fields[2]:-}
+  target_failed=${release_fields[3]:-}
   if [[ -z "$latest" || -z "$published" ]] || ! age=$(format_age "$published" "$now"); then
     printf '%-20s %-12s LOOKUP FAILED\n' "$name" "$version"
     lookup_lines+=("${name}: no release time found at ${source}")
@@ -349,10 +467,6 @@ while IFS=' ' read -r name version source; do
   if [[ -n "$target_failed" ]]; then
     lookup_lines+=("${name}: upgrade-target lookup failed at ${source}")
   fi
-  released=${published%%.*}
-  released=${released%Z}
-  released=${released%+00:00}
-  released=${released/T/ }
   latest_fresh=""
   if [[ "$age" == "future" ]]; then
     age_days=-1
@@ -386,18 +500,17 @@ while IFS=' ' read -r name version source; do
       mismatch_lines+=("${name} ${version} (latest ${latest} is not newer)")
     fi
   fi
-  age_color=""
-  age_reset=""
-  if ((age_days == 0)); then
-    age_color=$color_red
-  elif ((age_days >= 0 && age_days < COOLDOWN_DAYS)); then
-    age_color=$color_orange
+  print_release_row "$name" "$version" "$latest" "$published" "$flag"
+  if [[ -n "$latest_fresh" ]]; then
+    i=4
+    while ((i < ${#release_fields[@]})); do
+      newer=${release_fields[i]}
+      newer_published=${release_fields[i + 1]:-}
+      i=$((i + 2))
+      [[ -n "$newer" && -n "$newer_published" ]] || continue
+      print_release_row "" "" "$newer" "$newer_published" "" || true
+    done
   fi
-  if [[ -n "$age_color" ]]; then
-    age_reset=$color_reset
-  fi
-  printf '%-20s %-12s %-12s %-20s ' "$name" "$version" "$latest" "$released"
-  printf '%s%s%s%s\n' "$age_color" "$age" "$age_reset" "$flag"
 done <<< "$entries"
 
 exit_code=0

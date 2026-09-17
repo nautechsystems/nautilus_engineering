@@ -271,6 +271,7 @@ expect_report "differing pin with no newer release past the cooldown is a hold" 
   "epsilon              0.10.0       0.10.0"
 expect_absent "hold report has no outdated flag" "** OUTDATED"
 expect_absent "hold report does not claim all pins match" "All 5 tool pin(s) match"
+expect_absent "hold does not repeat the pin as a previous row" $'\n                                  1.2.3'
 
 orange=$(printf '\033[38;5;208m')
 output=$(
@@ -290,13 +291,29 @@ else
   failures=$((failures + 1))
 fi
 
-write_fixture 1.3.0 "$recent_release" "1.2.11 $older_release"
+write_fixture 1.3.0 "$recent_release" "1.2.11 $older_release 1.2.10 $older_release"
 expect_report "newest past-cooldown release is the upgrade target" 1 \
   "alpha                1.2.3        1.3.0" \
   "1d 12h  ** RECENT" \
+  $'\n                                  1.2.11' \
+  $'\n                                  1.2.10' \
   $'\n\nUpgradable pins (1): newest release past the 3-day cooldown' \
   "alpha 1.2.3 -> 1.2.11 (latest 1.3.0 within cooldown)"
 expect_absent "target report has no hold section" "Cooldown holds"
+if [[ "$output" == *$'\n                                  1.2.11'*$'\n                                  1.2.10'* ]]; then
+  printf 'ok   %s\n' "intervening rows are newest first"
+else
+  printf 'FAIL %s\n%s\n' "intervening rows are newest first" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+write_fixture 1.3.0 "$recent_release" "1.2.11 $recent_release 1.2.9 $recent_release 1.2.3 $older_release"
+expect_report "hold lists every newer release between pin and latest" 0 \
+  "alpha                1.2.3        1.3.0" \
+  $'\n                                  1.2.11' \
+  $'\n                                  1.2.9' \
+  "alpha 1.2.3 -> 1.3.0 (1d 12h within cooldown)"
+expect_absent "hold between rows omit the tool name" $'\nalpha                1.2.3        1.2.11'
 
 write_fixture
 sed "s|^pypi beta 2.0.0 .*|pypi beta 2.1.0 ${recent_release} 2.0.5 ${older_release}|" \
@@ -304,6 +321,7 @@ sed "s|^pypi beta 2.0.0 .*|pypi beta 2.1.0 ${recent_release} 2.0.5 ${older_relea
 mv "${fixture}.tmp" "$fixture"
 expect_report "pypi history yields the upgrade target" 1 \
   "beta                 2.0.0        2.1.0" \
+  $'\n                                  2.0.5' \
   "beta 2.0.0 -> 2.0.5 (latest 2.1.0 within cooldown)"
 
 write_fixture
@@ -312,6 +330,7 @@ sed "s|^npm gamma 0.11.0.1 .*|npm gamma 0.12.0 ${recent_release} 0.11.5 ${older_
 mv "${fixture}.tmp" "$fixture"
 expect_report "npm history yields the upgrade target" 1 \
   "gamma                0.11.0.1     0.12.0" \
+  $'\n                                  0.11.5' \
   "gamma 0.11.0.1 -> 0.11.5 (latest 0.12.0 within cooldown)"
 
 write_fixture
@@ -320,6 +339,7 @@ sed "s|^github example/delta 3.1.0 .*|github example/delta 3.3.0 ${recent_releas
 mv "${fixture}.tmp" "$fixture"
 expect_report "github release history yields the upgrade target" 1 \
   "delta                3.1.0        3.3.0" \
+  $'\n                                  3.2.0' \
   "delta 3.1.0 -> 3.2.0 (latest 3.3.0 within cooldown)"
 
 write_fixture
@@ -337,6 +357,7 @@ example/epsilon v0.11.0^{}
 FIXTURE
 expect_report "github tag walk yields the upgrade target" 1 \
   "epsilon              0.10.0       0.11.0" \
+  $'\n                                  0.10.5' \
   "epsilon 0.10.0 -> 0.10.5 (latest 0.11.0 within cooldown)"
 
 write_catalog
@@ -352,6 +373,7 @@ expect_report "five-segment pins compare beyond four sort keys" 0 \
   "eta                  1.0.0.0.10   1.0.0.0.20" \
   "eta 1.0.0.0.10 -> 1.0.0.0.20 (1d 12h within cooldown)"
 expect_absent "five-segment hold is not an upgrade target" "eta 1.0.0.0.10 -> 1.0.0.0.2 (latest"
+expect_absent "older five-segment release is not listed" $'\n                                  1.0.0.0.2'
 
 write_catalog
 write_fixture
@@ -374,7 +396,19 @@ expect_report "non-numeric latest gets a neutral target suffix" 1 \
   "5d 12h  ** OUTDATED" \
   "beta 2.0.0 -> 2.0.5 (latest 2.0.0rc1)"
 expect_absent "neutral suffix does not claim a cooldown" "within cooldown"
+expect_absent "past-cooldown latest lists no intervening row" $'\n                                  2.0.5'
 
+write_catalog
+sed 's/version = "1.2.3"/version = "1.2.3-1"/' "${test_root}/tools.toml" > "${test_root}/tools.toml.tmp"
+mv "${test_root}/tools.toml.tmp" "${test_root}/tools.toml"
+write_fixture 1.3.0 "$recent_release" "1.2.9 $recent_release"
+expect_report "non-numeric pin does not fail lookup" 0 \
+  "alpha                1.2.3-1      1.3.0" \
+  "1d 12h  ** RECENT"
+expect_absent "non-numeric pin is not a lookup failure" "LOOKUP FAILED"
+expect_absent "non-numeric pin lists no intervening row" $'\n                                  1.2.9'
+
+write_catalog
 write_fixture
 sed "s|^github-tags example/epsilon 0.10.0 .*|github-tags example/epsilon 0.11.0 ${recent_release} 0.10.0 ${older_release}|" \
   "$fixture" > "${fixture}.tmp"
