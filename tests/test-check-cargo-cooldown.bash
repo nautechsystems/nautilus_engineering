@@ -838,7 +838,7 @@ else
   failures=$((failures + 1))
 fi
 
-# An entry added by the same working-tree change is re-verified online.
+# A lockfile bump is re-verified even when the database file itself is new.
 setup_repo db-new-entry
 write_db "serde|1.1.0|$old_date"
 printf 'serde 1.1.0 %s\n' "$old_date" > "$fixture"
@@ -851,6 +851,40 @@ if [[ "$status" == 0 && "$output" == *"Publication dates: 0 from the cooldown da
   printf 'ok   database entry added by the diff is verified against the registry\n'
 else
   printf 'FAIL new database entry verification: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+# A database absent from the comparison base is a seed. Unchanged versions are
+# trusted without a registry request, even when the recorded date would disagree.
+setup_repo db-seed-offline
+write_db "serde|1.0.0|2099-01-01T00:00:00Z"
+: > "$fixture"
+: > "$curl_log"
+status=0
+output="$(run_check)" || status=$?
+if [[ "$status" == 0 && "$output" == *"No new registry crate versions vs HEAD."* &&
+  "$output" != *"disagree"* ]] && ! grep -q . "$curl_log"; then
+  printf 'ok   seeded unchanged dates are trusted without a registry check\n'
+else
+  printf 'FAIL seeded database trust: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+# A seed still re-verifies a version the same diff introduces in a lockfile.
+setup_repo db-seed-with-bump
+write_db "serde|1.0.0|$old_date" "tokio|1.0.0|$old_date"
+printf 'tokio 1.0.0 %s\n' "$old_date" > "$fixture"
+write_lock "tokio" "1.0.0" "0.1.0"
+: > "$curl_log"
+status=0
+output="$(run_check)" || status=$?
+if [[ "$status" == 0 &&
+  "$output" == *"Publication dates: 0 from the cooldown database, 1 from crates.io"* ]] &&
+  grep -Fq 'tokio/1.0.0' "$curl_log" &&
+  ! grep -Fq 'serde/1.0.0' "$curl_log"; then
+  printf 'ok   seed re-verifies only the lockfile bump\n'
+else
+  printf 'FAIL seed bump verification: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
 fi
 

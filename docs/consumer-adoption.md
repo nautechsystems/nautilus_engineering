@@ -250,13 +250,16 @@ restore it from an untrusted source.
 
 Commit the cooldown database (`.supply-chain/crate-dates.json`) beside the audits so the gate reads
 publication dates without registry requests. Registry publication dates are immutable, so recorded
-entries are trusted offline; entries added by the same change that bumps a lockfile are re-verified
-against crates.io, and a recorded date that disagrees with the registry fails the gate. The
-dependency-update transaction records dates for every change it accepts and ends with the same
-full-scope check as the compilation gate, so a version that already violated the cooldown when it
-was committed also fails the update. Run `bash scripts/check-cargo-cooldown.sh --update-db` after
-any manual lockfile edit to reconcile the database, which also prunes entries no tracked lock
-resolves.
+entries are trusted offline. Additions to a database that already exists at the comparison base are
+re-verified against crates.io, including a database-only addition, and a recorded date that disagrees
+with the registry fails the gate. A database that the comparison base lacks at the same path, such as
+its first commit or a move between supported paths, is a seed: the diff check re-verifies only
+versions that the same diff introduces in a lockfile. Review that seed, because the offline gate
+trusts it. The dependency-update transaction records dates for every change it accepts
+and ends with the same full-scope check as the compilation gate, so a version that already violated
+the cooldown when it was committed also fails the update. Run
+`bash scripts/check-cargo-cooldown.sh --update-db` after any manual lockfile edit to reconcile the
+database, which also prunes entries no tracked lock resolves.
 
 Cooldown reduces exposure to newly published malicious registry releases. It does not certify
 older releases, sandbox build scripts, or vet Git and local path dependencies.
