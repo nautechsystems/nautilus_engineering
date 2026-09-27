@@ -224,11 +224,11 @@ bash scripts/check-cargo-cooldown.sh --all --cache target/.cargo-cooldown.json
 ```
 
 The full check covers every tracked `Cargo.lock`, including versions already committed or pulled
-from another branch. It requires no Git comparison base or full checkout history. Keep the
-diff-based mode for dependency-update and pre-commit feedback; an empty diff does not prove that
-resolved dependencies satisfy the cooldown. With a committed cooldown database, the full check
-reads recorded publication dates without registry requests, so the database is the trust anchor
-for those dates.
+from another branch. Without a configured trusted base, it requires no Git comparison base or full
+checkout history. Keep the diff-based mode for dependency-update and pre-commit feedback; an empty
+diff does not prove that resolved dependencies satisfy the cooldown. With a committed cooldown
+database, the full check reads recorded publication dates without registry requests, so the
+database is the trust anchor for those dates.
 
 Wire the gate into build, check, lint, test, documentation, benchmark, and code-generation commands
 that can compile Rust, including direct CI commands and source-install paths. Stub generation may
@@ -243,9 +243,9 @@ also compile Rust. Enforce these requirements in the consumer:
 - External tool installations with separate lockfiles need their own checks. A repository-lockfile
   check does not cover those dependencies or intercept arbitrary direct Cargo invocations.
 
-The cache records only successful full checks. Unchanged lockfiles, policy, audits, and script
-content allow an early return without registry requests; a change to any of them requires another
-full check. Failed checks are not cached. Keep the cache as local verification state and never
+The cache records only successful full checks. Unchanged lockfiles, policy, audits, database,
+script, and trusted-base content allow an early return without registry requests; a change to any
+of them requires another full check. Failed checks are not cached. Keep the cache as local verification state and never
 restore it from an untrusted source.
 
 Commit the cooldown database (`.supply-chain/crate-dates.json`) beside the audits so the gate reads
@@ -260,6 +260,15 @@ and ends with the same full-scope check as the compilation gate, so a version th
 the cooldown when it was committed also fails the update. Run
 `bash scripts/check-cargo-cooldown.sh --update-db` after any manual lockfile edit to reconcile the
 database, which also prunes entries no tracked lock resolves.
+
+A branch can add a backdated entry beside the version it introduces, and the offline full check
+would trust it. To close that gap, set `trusted-base` in `[workspace.metadata.cooldown]` to a
+revision whose database you trust, such as `origin/develop`. The full check then re-verifies each
+database entry that revision lacks against crates.io, applying the seed rule to versions it did not
+resolve, and caches the pass. Registry requests therefore repeat only when the branch or the
+trusted base changes. A checkout that cannot resolve the revision fails the gate, except a shallow
+checkout, which trusts recorded dates; keep a full-history job, such as pre-commit, running the
+check against the trusted base. An explicit `--base` overrides the setting and must resolve.
 
 Cooldown reduces exposure to newly published malicious registry releases. It does not certify
 older releases, sandbox build scripts, or vet Git and local path dependencies.

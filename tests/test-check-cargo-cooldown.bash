@@ -231,10 +231,13 @@ LOCK
 }
 
 write_cargo_toml() {
-  local allow_block=${1:-}
+  local allow_block=${1:-} trusted_base=${2:-}
   {
     printf '[workspace]\nmembers = []\n\n'
     printf '[workspace.metadata.cooldown]\ndays = 3\n'
+    if [[ -n "$trusted_base" ]]; then
+      printf 'trusted-base = "%s"\n' "$trusted_base"
+    fi
     if [[ -n "$allow_block" ]]; then
       printf '\n[workspace.metadata.cooldown.allow]\n%s\n' "$allow_block"
     fi
@@ -758,7 +761,8 @@ setup_repo full-lock
 printf 'serde 1.0.0 %s\n' "$fresh_date" > "$fixture"
 CI=true CHANGED_BASE_SHA=unavailable expect "full check catches committed fresh versions without a base" \
   1 "within the 3-day cooldown" --all
-expect "full check cannot silently use a diff" 2 "--all cannot be combined" --all --base HEAD
+expect "full check with a trusted base still checks every resolved version" 1 \
+  "within the 3-day cooldown" --all --base HEAD
 expect "full check cannot repair" 2 "--all cannot be combined" --all --fix
 expect "diff check cannot use a full-check cache" 2 "--cache requires --all" --cache "$test_root/cache"
 
@@ -1043,6 +1047,124 @@ else
   printf 'FAIL partial database full check: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
 fi
+
+# A full check re-verifies database entries absent at the configured trusted
+# base, so a branch cannot vouch for a date it adds itself.
+setup_repo db-trusted-base
+write_db "serde|1.0.0|$old_date"
+commit_db
+git -C "$repo" branch trusted
+write_cargo_toml "" trusted
+write_lock "serde" "1.1.0" "0.1.0"
+write_db "serde|1.0.0|$old_date" "serde|1.1.0|$old_date"
+printf 'serde 1.1.0 %s\n' "$old_date" > "$fixture"
+: > "$curl_log"
+status=0
+output="$(run_check --all)" || status=$?
+if [[ "$status" == 0 && "$output" == *"Publication dates: 0 from the cooldown database, 1 from crates.io"* ]] &&
+  grep -Fq 'serde/1.1.0' "$curl_log" && ! grep -Fq 'serde/1.0.0' "$curl_log"; then
+  printf 'ok   full check re-verifies only entries absent at the trusted base\n'
+else
+  printf 'FAIL trusted-base full check: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
+expect "full check rejects a backdated entry absent at the trusted base" 1 \
+  "database date(s) disagree with crates.io" --all
+
+# The cache key covers the trusted base, so a pass cached while trusting every
+# recorded date never satisfies a check against a trusted base.
+setup_repo db-trusted-base-cache
+write_db "serde|1.0.0|$old_date"
+commit_db
+git -C "$repo" branch trusted
+write_lock "serde" "1.1.0" "0.1.0"
+write_db "serde|1.0.0|$old_date" "serde|1.1.0|$old_date"
+printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
+trusted_cache="$test_root/trusted-base-cache"
+expect "full check without a trusted base trusts a recorded date" 0 \
+  "1 from the cooldown database, 0 from crates.io" --all --cache "$trusted_cache"
+expect "trusted base ignores a pass cached without one" 1 \
+  "database date(s) disagree with crates.io" --all --base trusted --cache "$trusted_cache"
+printf 'serde 1.1.0 %s\n' "$old_date" > "$fixture"
+expect "trusted-base pass seeds the cache" 0 "1 from crates.io" \
+  --all --base trusted --cache "$trusted_cache"
+: > "$fixture"
+expect "unchanged trusted base reuses the cache offline" 0 "full-check cache matches" \
+  --all --base trusted --cache "$trusted_cache"
+git -C "$repo" add -A
+git -C "$repo" commit --quiet -m "record serde 1.1.0"
+git -C "$repo" branch --force trusted HEAD
+expect "trusted base content change invalidates the cache" 0 \
+  "1 from the cooldown database, 0 from crates.io" --all --base trusted --cache "$trusted_cache"
+
+# A trusted base without a database is a seed: only versions that base did not
+# resolve are re-verified.
+setup_repo db-trusted-base-seed
+git -C "$repo" branch trusted
+cat >> "${repo}/Cargo.lock" << 'LOCK'
+
+[[package]]
+name = "tokio"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1111111111111111111111111111111111111111111111111111111111111111"
+LOCK
+write_db "serde|1.0.0|$old_date" "tokio|1.0.0|$old_date"
+printf 'tokio 1.0.0 %s\n' "$old_date" > "$fixture"
+: > "$curl_log"
+status=0
+output="$(run_check --all --base trusted)" || status=$?
+if [[ "$status" == 0 && "$output" == *"Publication dates: 1 from the cooldown database, 1 from crates.io"* ]] &&
+  grep -Fq 'tokio/1.0.0' "$curl_log" && ! grep -Fq 'serde/1.0.0' "$curl_log"; then
+  printf 'ok   trusted-base seed re-verifies only versions the base did not resolve\n'
+else
+  printf 'FAIL trusted-base seed: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+# A failed database-only verification must not leave a cached pass behind.
+setup_repo db-trusted-base-no-registry
+write_lock "local-crate" "1.0.0" "0.1.0" "git+https://example.com/local-crate#0000" ""
+write_db "serde|1.0.0|$old_date"
+git -C "$repo" add -A
+git -C "$repo" commit --quiet -m "record without registry packages"
+git -C "$repo" branch trusted
+write_db "serde|1.0.0|$old_date" "serde|1.1.0|$old_date"
+: > "$fixture"
+failed_cache="$test_root/trusted-base-failed-cache"
+expect "database-only verification failure fails the full check" 1 \
+  "could not be reached on crates.io" --all --base trusted --cache "$failed_cache"
+expect "failed database-only verification leaves no cached pass" 1 \
+  "could not be reached on crates.io" --all --base trusted --cache "$failed_cache"
+
+setup_repo trusted-base-missing
+write_cargo_toml "" missing-branch
+expect "configured trusted base must resolve in a full checkout" 2 \
+  "Trusted base does not resolve to a commit: missing-branch" --all
+expect "empty explicit trusted base is rejected" 2 "--base requires a value" --all --base ""
+
+# A shallow CI checkout lacks the trusted base and falls back to recorded dates.
+setup_repo trusted-base-shallow
+write_db "serde|1.0.0|$old_date"
+write_cargo_toml "" trusted
+git -C "$repo" add -A
+git -C "$repo" commit --quiet -m "configure trusted base"
+git clone --quiet --depth 1 "file://${repo}" "${repo}-clone"
+repo="${repo}-clone"
+: > "$fixture"
+: > "$curl_log"
+status=0
+output="$(run_check --all)" || status=$?
+if [[ "$status" == 0 && "$output" == *"trusted base trusted is not in this shallow checkout"* &&
+  "$output" == *"1 from the cooldown database, 0 from crates.io"* ]] && ! grep -q . "$curl_log"; then
+  printf 'ok   shallow checkout without the trusted base trusts recorded dates offline\n'
+else
+  printf 'FAIL shallow trusted-base fallback: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+expect "explicit trusted base must resolve in a shallow checkout" 2 \
+  "Trusted base does not resolve to a commit: trusted" --all --base trusted
 
 setup_repo db-record
 printf 'serde 1.0.0 %s\n' "$old_date" > "$fixture"
