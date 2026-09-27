@@ -31,30 +31,6 @@ Before the first sync, add its transient state to the consumer's `.gitignore`:
 The ignore rules prevent accidental staging of recovery data. The checker still fails while a sync
 marker or process lock exists.
 
-## Choose a pre-commit layout
-
-Without managed markers, the renderer creates one section immediately after `repos:`. Existing
-consumers can retain that layout. To run the sync checks first and place other shared definitions
-after consumer-owned checks, add both split marker pairs before rendering:
-
-```yaml
-repos:
-  # nautilus-engineering: sync begin
-  # nautilus-engineering: sync end
-
-  # Keep consumer-owned entries here.
-
-  # nautilus-engineering: hooks begin
-  # nautilus-engineering: hooks end
-```
-
-The renderer keeps the sync region directly after `repos:` and leaves the hooks region at its
-marked position. The split layout requires the `pre-commit-sync` artifact. Use either the single
-section or both split regions; partial or mixed marker layouts fail validation.
-
-To migrate an existing consumer, delete the legacy region from its `begin` marker through its `end`
-marker, add both split marker pairs at their intended positions, then run the renderer.
-
 ## Choose a selection
 
 Profiles select related artifacts. Multiple profiles form a union, so overlapping artifacts are
@@ -87,6 +63,30 @@ sync/sync.bash list
 
 Use `--target ARTIFACT=PATH` for a repository that stores an artifact elsewhere. Artifacts marked
 with `target_fixed = true` reject overrides because the managed files refer to their manifest paths.
+
+## Choose a pre-commit layout
+
+Without managed markers, the renderer creates one section immediately after `repos:`. Existing
+consumers can retain that layout. To run the sync checks first and place other shared definitions
+after consumer-owned checks, add both split marker pairs before rendering:
+
+```yaml
+repos:
+  # nautilus-engineering: sync begin
+  # nautilus-engineering: sync end
+
+  # Keep consumer-owned entries here.
+
+  # nautilus-engineering: hooks begin
+  # nautilus-engineering: hooks end
+```
+
+The renderer keeps the sync region directly after `repos:` and leaves the hooks region at its
+marked position. The split layout requires the `pre-commit-sync` artifact. Use either the single
+section or both split regions; partial or mixed marker layouts fail validation.
+
+To migrate an existing consumer, delete the legacy region from its `begin` marker through its `end`
+marker, add both split marker pairs at their intended positions, then run the renderer.
 
 ## Adopt into a new repository
 
@@ -213,26 +213,29 @@ lockfile layout, Cargo metadata, and local command wiring.
 
 ## Gate Rust compilation on dependency cooldown
 
-Each consumer must run the full cooldown check before every compilation-capable entry point.
-The goal is to check resolved registry versions before dependency build scripts or procedural
-macros can execute. Vendoring the script alone does not enforce this policy.
+Each consumer must run the full cooldown check before every compilation-capable entry point, so
+resolved registry versions are checked before dependency build scripts or procedural macros can
+execute. Vendoring the script alone does not enforce this policy.
 
-Invoke the compilation gate from the consumer root:
+Run the gate from the consumer root:
 
 ```bash
 bash scripts/check-cargo-cooldown.sh --all --cache target/.cargo-cooldown.json
 ```
 
 The full check covers every tracked `Cargo.lock`, including versions already committed or pulled
-from another branch. Without a configured trusted base, it requires no Git comparison base or full
+from another branch. Without a configured trusted base, it needs no Git comparison base or full
 checkout history. Keep the diff-based mode for dependency-update and pre-commit feedback; an empty
-diff does not prove that resolved dependencies satisfy the cooldown. With a committed cooldown
-database, the full check reads recorded publication dates without registry requests, so the
-database is the trust anchor for those dates.
+diff does not prove that resolved dependencies satisfy the cooldown.
 
-Wire the gate into build, check, lint, test, documentation, benchmark, and code-generation commands
-that can compile Rust, including direct CI commands and source-install paths. Stub generation may
-also compile Rust. Enforce these requirements in the consumer:
+Cooldown reduces exposure to newly published malicious registry releases. It does not certify
+older releases, sandbox build scripts, or vet Git and local path dependencies.
+
+### Wire the gate
+
+Wire the gate into every build, check, lint, test, documentation, benchmark, stub-generation, and
+code-generation command that can compile Rust, including direct CI commands and source-install
+paths. Enforce these requirements in the consumer:
 
 - Every compilation command waits for a successful gate, including under parallel task execution.
   Listing the gate beside another compilation prerequisite does not establish that ordering.
@@ -243,35 +246,50 @@ also compile Rust. Enforce these requirements in the consumer:
 - External tool installations with separate lockfiles need their own checks. A repository-lockfile
   check does not cover those dependencies or intercept arbitrary direct Cargo invocations.
 
-The cache records only successful full checks. Unchanged lockfiles, policy, audits, database,
-script, and trusted-base content allow an early return without registry requests; a change to any
-of them requires another full check. Failed checks are not cached. Keep the cache as local verification state and never
-restore it from an untrusted source.
+### Cache full checks
 
-Commit the cooldown database (`.supply-chain/crate-dates.json`) beside the audits so the gate reads
-publication dates without registry requests. Registry publication dates are immutable, so recorded
-entries are trusted offline. Additions to a database that already exists at the comparison base are
-re-verified against crates.io, including a database-only addition, and a recorded date that disagrees
-with the registry fails the gate. A database that the comparison base lacks at the same path, such as
-its first commit or a move between supported paths, is a seed: the diff check re-verifies only
-versions that the same diff introduces in a lockfile. Review that seed, because the offline gate
-trusts it. The dependency-update transaction records dates for every change it accepts
-and ends with the same full-scope check as the compilation gate, so a version that already violated
-the cooldown when it was committed also fails the update. Run
-`bash scripts/check-cargo-cooldown.sh --update-db` after any manual lockfile edit to reconcile the
-database, which also prunes entries no tracked lock resolves.
+The cache records only successful full checks; failed checks are not cached. When the lockfiles,
+policy, audits, database, script, and trusted-base content are all unchanged, the check returns
+early without registry requests. A change to any of them requires another full check. Keep the
+cache as local verification state and never restore it from an untrusted source.
 
-A branch can add a backdated entry beside the version it introduces, and the offline full check
-would trust it. To close that gap, set `trusted-base` in `[workspace.metadata.cooldown]` to a
-revision whose database you trust, such as `origin/develop`. The full check then re-verifies each
-database entry that revision lacks against crates.io, applying the seed rule to versions it did not
-resolve, and caches the pass. Registry requests therefore repeat only when the branch or the
-trusted base changes. A checkout that cannot resolve the revision fails the gate, except a shallow
-checkout, which trusts recorded dates; keep a full-history job, such as pre-commit, running the
-check against the trusted base. An explicit `--base` overrides the setting and must resolve.
+### Commit the publication-date database
 
-Cooldown reduces exposure to newly published malicious registry releases. It does not certify
-older releases, sandbox build scripts, or vet Git and local path dependencies.
+Commit the cooldown database (`.supply-chain/crate-dates.json`) beside the audits. Registry
+publication dates are immutable, so the full check trusts recorded entries offline and makes no
+registry requests for them. The committed database is therefore the trust anchor for those dates.
+
+Against a comparison base, the check re-verifies added entries against crates.io based on what
+the base holds at the same path:
+
+- **Base has the database**: every added entry, including a database-only addition.
+- **Base lacks the database**: only versions that the same diff introduces in a lockfile. The
+  database is a seed, as in its first commit or a move between supported paths. Review a seed,
+  because the offline gate trusts it.
+
+A recorded date that disagrees with the registry fails the gate.
+
+The dependency-update transaction records dates for every change it accepts. It ends with the same
+full-scope check as the compilation gate, so a version that already violated the cooldown when it
+was committed also fails the update. After any manual lockfile edit, run
+`bash scripts/check-cargo-cooldown.sh --update-db` to reconcile the database; it also prunes
+entries that no tracked lock resolves.
+
+### Set a trusted base
+
+Without a trusted base, a branch can add a backdated entry beside the version it introduces, and
+the offline full check trusts it. To close that gap, set `trusted-base` in
+`[workspace.metadata.cooldown]` to a revision whose database you trust, such as `origin/develop`.
+
+The full check then re-verifies against crates.io each database entry that the trusted base lacks.
+When the trusted base has no database, the seed rule applies: only entries for versions that its
+lockfiles did not resolve are re-verified. The check caches the pass, so registry requests repeat only when the branch or the trusted
+base changes.
+
+- A checkout that cannot resolve the trusted base fails the gate.
+- A shallow checkout that lacks the trusted base trusts recorded dates instead. Keep a
+  full-history job, such as pre-commit, running the check against the trusted base.
+- An explicit `--base` overrides the setting and must resolve.
 
 ## Update an existing adoption
 

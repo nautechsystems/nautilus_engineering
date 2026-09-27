@@ -1,8 +1,7 @@
 # Centralize Supply-Chain Security
 
 Nautilus repositories use the same pinned scanners and audit runner while retaining their own
-dependency scope, advisory exceptions, and enforcement choices. This separates shared machinery
-from repository policy.
+dependency scope, advisory exceptions, and enforcement choices.
 
 ## Ownership
 

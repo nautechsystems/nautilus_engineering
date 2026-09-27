@@ -2,14 +2,12 @@
 
 Each YAML file in this directory is a sequence of complete pre-commit repository entries. The
 entries are sources for managed regions of a consumer's `repos` list; they are not standalone
-`.pre-commit-config.yaml` files.
+`.pre-commit-config.yaml` files. Pre-commit and prek cannot include repository entries from another
+file, so consumer adoption copies selected definitions into clearly marked managed regions. Keep
+repository-specific hooks, exclusions, and top-level settings outside those regions.
 
 See [`../docs/consumer-adoption.md`](../docs/consumer-adoption.md) for the complete consumer
 procedure, including profile selection, rendering, staged checks, and conflict handling.
-
-Pre-commit and prek do not support including repository entries from another file. Consumer
-adoption therefore copies selected definitions into clearly marked managed regions. Keep
-repository-specific hooks, exclusions, and top-level settings outside those regions.
 
 Vendor the `pre-commit` profile for all shared pre-commit definitions. For a narrower adoption,
 pair the selected definition artifacts with the `sync` profile. Then render the managed content
