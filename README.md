@@ -96,6 +96,14 @@ For a faster loop, run only the syntax checks, tool-pin validation, and reposito
 make check
 ```
 
+Make preserves spaces in discovered filenames and stops if Git discovery fails. To select files,
+set `PYTHON_FILES`, `SHELL_FILES`, or `TEST_FILES` on the `make` command line, for example:
+`make test TEST_FILES=tests/test-sync.bash`. Use `ACTION_FILES` with `make check-github-action-pins`.
+
+Selections are shell-word lists: quote filenames containing spaces inside the value.
+Empty or malformed explicit lists fail. Values are parsed without a shell, after Make expands
+its own variable references and functions.
+
 This repository has no dependency graph to audit. Its tests instead exercise the shared
 supply-chain runner, installer, exact version checks, policy validation, and secondary dependency
 paths with controlled fixtures. Every maintained script has behavioral coverage, and CI runs every

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -35,7 +39,6 @@ jobs:
           python-version: "3.12"
 
       - name: Run focused checks
-        shell: bash
         run: |
           python3 -B scripts/check-tool-pins.py
 

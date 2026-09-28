@@ -1,29 +1,27 @@
 SHELL := bash
 
 PREK := uvx --from prek==$(shell bash scripts/tool-version.sh prek) prek
-PYTHON_FILES := $(shell git ls-files --cached --others --exclude-standard -- '*.py' | LC_ALL=C sort)
-SHELL_FILES := $(shell git ls-files --cached --others --exclude-standard -- scripts sync tests | awk '/\.(bash|sh)$$/' | LC_ALL=C sort)
-TEST_FILES := $(shell git ls-files --cached --others --exclude-standard -- tests | awk '/\/test-.*\.bash$$/' | LC_ALL=C sort)
-ACTION_FILES := $(shell git ls-files --cached --others --exclude-standard -- .github | awk '/\.(yaml|yml)$$/' | LC_ALL=C sort)
+# The runner discovers NUL-delimited paths unless a caller explicitly overrides a list.
+export PYTHON_FILES :=
+export SHELL_FILES :=
+export TEST_FILES :=
+export ACTION_FILES :=
 
 .PHONY: adoption-status check check-github-action-pins check-python check-shell check-tool-pins check-tool-updates outdated pre-commit pre-flight test
 
 check: check-python check-shell check-tool-pins test
 
 check-python:
-	@test -n "$(strip $(PYTHON_FILES))" || { echo "No tracked Python files found" >&2; exit 1; }
-	python3 -m py_compile $(PYTHON_FILES)
+	python3 -B scripts/run-make-check.py python '$(origin PYTHON_FILES)'
 
 check-shell:
-	@test -n "$(strip $(SHELL_FILES))" || { echo "No tracked shell files found" >&2; exit 1; }
-	bash -n $(SHELL_FILES)
+	python3 -B scripts/run-make-check.py shell '$(origin SHELL_FILES)'
 
 check-tool-pins:
 	python3 -B scripts/check-tool-pins.py
 
 check-github-action-pins:
-	@test -n "$(strip $(ACTION_FILES))" || { echo "No tracked GitHub Action files found" >&2; exit 1; }
-	bash scripts/check-github-action-shas.sh $(ACTION_FILES)
+	python3 -B scripts/run-make-check.py action '$(origin ACTION_FILES)'
 
 adoption-status:
 	@test -n "$(strip $(CONSUMERS))" || { echo "Set CONSUMERS to explicit consumer paths" >&2; exit 2; }
@@ -40,8 +38,4 @@ pre-commit:
 pre-flight: pre-commit
 
 test:
-	@test -n "$(strip $(TEST_FILES))" || { echo "No tracked test files found" >&2; exit 1; }
-	@set -e; for test_file in $(TEST_FILES); do \
-		printf '\n%s\n' "Running $$test_file"; \
-		bash "$$test_file"; \
-	done
+	@python3 -B scripts/run-make-check.py test '$(origin TEST_FILES)'
