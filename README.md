@@ -1,9 +1,8 @@
 # Nautilus Engineering
 
-Nautilus Engineering is the maintained source for engineering standards, lint configurations,
-pre-commit definitions, and repository checks shared across Nautilus projects. Consumer
-repositories vendor selected files at a pinned commit, review each update locally, and keep their
-own project policy.
+Nautilus Engineering maintains shared engineering standards, lint configurations, pre-commit definitions,
+and repository checks for Nautilus projects. Consumer repositories vendor selected files at a pinned commit,
+review each update locally, and keep their own project policy.
 
 It covers stable behavior that should stay consistent across projects. Release processes,
 deployment logic, generated-file exceptions, compiler pins, and other repository-specific
@@ -32,10 +31,9 @@ adopts them on its own schedule.
 | `docs/`       | Consumer adoption and supply-chain security guides                        |
 | `tests/`      | Focused tests for shared behavior                                         |
 
-[`standards/markdown.md`](standards/markdown.md) defines Markdown syntax and formatting.
-[`standards/shell.md`](standards/shell.md) defines shell selection, portability, failure handling,
-formatting, and testing. The files under `config/` and `pre-commit/` are the authoritative lint and
-formatting baselines for Markdown, Rust, shell, YAML, and TOML.
+- [Markdown standard](standards/markdown.md): Markdown syntax and formatting.
+- [Shell standard](standards/shell.md): shell selection, portability, failure handling, formatting, and testing.
+- `config/` and `pre-commit/`: authoritative lint and formatting baselines for Markdown, Rust, shell, YAML, and TOML.
 
 ## Adopt shared files
 
@@ -85,10 +83,10 @@ Run the complete local CI-readiness gate:
 make pre-flight
 ```
 
-`make pre-flight` is an alias for `make pre-commit`, which runs every formatter, linter, and
-repository check, including private-key detection, GitHub Action pin validation, and `make check`.
-The Makefile runs the exact cataloged prek release through uv. Install the hooks with
-`prek install`.
+`make pre-flight` aliases `make pre-commit`. It runs every formatter, linter, and repository check,
+including private-key detection, GitHub Action pin validation, and `make check`.
+
+The Makefile runs the exact cataloged prek release through uv. Install the hooks with `prek install`.
 
 For a faster loop, run only the syntax checks, tool-pin validation, and repository tests:
 
@@ -96,19 +94,22 @@ For a faster loop, run only the syntax checks, tool-pin validation, and reposito
 make check
 ```
 
-Make preserves spaces in discovered filenames and stops if Git discovery fails. To select files,
-set `PYTHON_FILES`, `SHELL_FILES`, or `TEST_FILES` on the `make` command line, for example:
-`make test TEST_FILES=tests/test-sync.bash`. Use `ACTION_FILES` with `make check-github-action-pins`.
+Make preserves spaces in discovered filenames and stops if Git discovery fails.
+
+To select files, set `PYTHON_FILES`, `SHELL_FILES`, or `TEST_FILES` on the `make` command line, for
+example: `make test TEST_FILES=tests/test-sync.bash`. Use `ACTION_FILES` with
+`make check-github-action-pins`.
 
 Selections are shell-word lists: quote filenames containing spaces inside the value.
 Empty or malformed explicit lists fail. Values are parsed without a shell, after Make expands
 its own variable references and functions.
 
-This repository has no dependency graph to audit. Its tests instead exercise the shared
-supply-chain runner, installer, exact version checks, policy validation, and secondary dependency
-paths with controlled fixtures. Every maintained script has behavioral coverage, and CI runs every
-tracked `tests/test-*.bash` file. Consumer pre-flight targets run their own unit tests and
-configured dependency audits.
+This repository has no dependency graph to audit. Its tests use controlled fixtures for the shared
+supply-chain runner, installer, exact version checks, policy validation, and secondary dependency paths.
+
+Every maintained script has behavioral coverage, and CI runs every tracked `tests/test-*.bash` file.
+
+Consumer pre-flight targets run their own unit tests and configured dependency audits.
 
 ### Adoption status
 
@@ -133,11 +134,16 @@ make check-tool-updates
 `make outdated` is an alias. Each `tools.toml` entry names its release source in `releases`, and
 `make check` verifies that the field stays complete.
 
-The report lists each pin with its latest release, the release's UTC timestamp, and its age. The
-cooldown defaults to 3 days; set `COOLDOWN_DAYS` to change it. When the latest release is still
-within the cooldown, following rows list every newer release between the pin and latest. In a
-terminal, releases less than a day old are red, releases still within the cooldown are orange, and
-older releases are uncolored.
+The report lists each pin with its latest release, the release's UTC timestamp, and its age.
+
+**Cooldown**: The default is 3 days; set `COOLDOWN_DAYS` to change it. When the latest release is
+still within the cooldown, following rows list every newer release between the pin and latest.
+
+In a terminal, release colors show age:
+
+- Red: less than a day old.
+- Orange: at least a day old and still within the cooldown.
+- Uncolored: older releases.
 
 The summary sorts each pin that differs from its latest release into one group:
 
@@ -147,9 +153,10 @@ The summary sorts each pin that differs from its latest release into one group:
 | Cooldown hold | The latest release is within the cooldown, and no newer one is past it | No              |
 | Pin mismatch  | The latest release is past the cooldown but not newer than the pin     | Yes             |
 
-An upgradable pin's target is the newest release past the cooldown, which can be older than the
-latest release. Invalid catalog entries and failed release or upgrade-target lookups also fail the
-check. Update a pin here first; consumers adopt the reviewed commit.
+An upgradable pin's target is the **newest release past the cooldown**, which can be older than the
+latest release. Invalid catalog entries and failed release or upgrade-target lookups also fail the check.
+
+Update a pin here first; consumers adopt the reviewed commit.
 
 ### CI validation
 

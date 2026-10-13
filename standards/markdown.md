@@ -10,11 +10,11 @@ separate local guide.
 
 Each rule has one of three levels:
 
-- **Required:** Applies to every in-scope file. Rules stated as unqualified imperatives such as
+- **Required**: Applies to every in-scope file. Rules stated as unqualified imperatives such as
   "Use" and "Do not", or with "must", are Required.
-- **Preferred:** Identifies the default when more than one valid form exists. Preferred rules use
+- **Preferred**: Identifies the default when more than one valid form exists. Preferred rules use
   "Prefer" and do not affect conformance.
-- **Transitional:** Applies to the named construct when it is added or substantially edited, and is
+- **Transitional**: Applies to the named construct when it is added or substantially edited, and is
   labeled **Transitional** or described as transitional. Existing instances may remain until a
   separate migration.
 
@@ -61,7 +61,7 @@ repository exclusions.
 
 - Separate paragraphs with one blank line.
 - Do not add consecutive blank lines.
-- Prefer a line-length target of 100-120 characters for prose.
+- Prefer a line-length target of [100, 120] characters for prose.
 - Prefer natural breaks and a longer line over leaving one to three words on the next line.
 - Allow code blocks, tables, and long link destinations to exceed the target when needed.
 
@@ -69,7 +69,7 @@ repository exclusions.
 
 - Use `-` for unordered list items.
 - Use ordered lists only when sequence matters.
-- **Transitional:** Use `1.` for every source item in an ordered list so the renderer supplies the
+- **Transitional**: Use `1.` for every source item in an ordered list so the renderer supplies the
   displayed numbers.
 - Keep list indentation and spacing consistent with the local markdownlint configuration.
 - Leave one blank line before and after a list.
@@ -116,13 +116,11 @@ Portable fallback:
 - Use GFM pipe tables for tabular content.
 - Include leading and trailing pipes.
 - Align pipe characters vertically.
-- Pad each column to its widest cell plus one space either side, which matches Prettier's
-  default table output. MD060 checks that pipes line up but ignores cell content, so it
-  accepts a column padded far wider than anything in it.
+- Pad each column to its widest cell plus one space either side, matching Prettier's default output.
+  MD060 checks pipe alignment but ignores cell content, so it accepts padding far wider than any cell.
 - Pad delimiter cells with spaces (`| ----- |`, not `|-----|`); MD060 does not check this
   either.
-- The `normalize markdown table padding` pre-commit hook rewrites tables to this form, so
-  there is no need to count characters by hand.
+- The `normalize markdown table padding` pre-commit hook applies this padding; no manual counting is needed.
 - Prefer left-aligned text columns and right-aligned numeric columns where appropriate.
 - Keep the delimiter row consistent with the intended rendered alignment.
 - Avoid HTML tables unless Markdown cannot express the required structure or the repository
@@ -140,7 +138,7 @@ Example:
 ## Code
 
 - Use backtick-fenced code blocks instead of indented code blocks.
-- **Transitional:** Specify a language for every opening fence. Use `text` for plain text or output
+- **Transitional**: Specify a language for every opening fence. Use `text` for plain text or output
   without a more specific grammar.
 - Use a longer outer fence when documenting fenced Markdown.
 - Use inline code for commands, file names, functions, types, environment variables, configuration

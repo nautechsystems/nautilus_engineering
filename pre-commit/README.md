@@ -2,9 +2,11 @@
 
 Each YAML file in this directory is a sequence of complete pre-commit repository entries. The
 entries are sources for managed regions of a consumer's `repos` list; they are not standalone
-`.pre-commit-config.yaml` files. Pre-commit and prek cannot include repository entries from another
-file, so consumer adoption copies selected definitions into clearly marked managed regions. Keep
-repository-specific hooks, exclusions, and top-level settings outside those regions.
+`.pre-commit-config.yaml` files.
+
+Pre-commit and prek cannot include repository entries from another file, so consumer adoption copies
+selected definitions into clearly marked managed regions. Keep repository-specific hooks, exclusions,
+and top-level settings outside those regions.
 
 See [`../docs/consumer-adoption.md`](../docs/consumer-adoption.md) for the complete consumer
 procedure, including profile selection, rendering, staged checks, and conflict handling.
@@ -26,8 +28,8 @@ The renderer removes byte-identical unmanaged definitions. It rejects selected d
 have a local variant with the same repository or hook identity, so repository-specific changes
 are not overwritten as a side effect of adoption.
 
-The definition fragments, sync checker, and managed-section command use fixed manifest targets.
-Do not retarget them: the fragments and commands refer to those paths directly.
+**Fixed targets**: The definition fragments, sync checker, and managed-section command use fixed
+manifest targets. Do not retarget them: the fragments and commands refer to those paths directly.
 
 The sync check is an unconditional local hook. Keep `always_run: true` and `pass_filenames: false`
 so lock-only changes, deletions, and renamed managed files cannot bypass it. The managed-section

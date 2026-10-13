@@ -19,7 +19,7 @@ Nautilus Engineering integration creates the exposure.
 
 ## Report a vulnerability
 
-Do not report a security vulnerability in a public issue.
+**Keep reports private**: Do not report a security vulnerability in a public issue.
 
 Use [GitHub Security Advisories](https://github.com/nautechsystems/nautilus_engineering/security/advisories/new)
 for private disclosure and coordination. Alternatively, email <security@nautechsystems.io>. You may

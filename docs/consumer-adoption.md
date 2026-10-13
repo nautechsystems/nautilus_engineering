@@ -33,9 +33,10 @@ marker or process lock exists.
 
 ## Choose a selection
 
-Profiles select related artifacts. Multiple profiles form a union, so overlapping artifacts are
-copied once. Use profiles for a new repository. In a mature repository, select artifacts explicitly
-and adopt them in reviewable groups.
+Profiles select related artifacts. Multiple profiles form a union, so overlapping artifacts are copied once.
+
+- For a new repository, use profiles.
+- For a mature repository, select artifacts explicitly and adopt them in reviewable groups.
 
 Pair a functional profile with `sync` so the consumer receives the lock checker and the managed
 pre-commit checks. The `pre-commit` profile already includes `sync`.
@@ -81,12 +82,16 @@ repos:
   # nautilus-engineering: hooks end
 ```
 
-The renderer keeps the sync region directly after `repos:` and leaves the hooks region at its
-marked position. The split layout requires the `pre-commit-sync` artifact. Use either the single
-section or both split regions; partial or mixed marker layouts fail validation.
+The renderer keeps the sync region directly after `repos:` and leaves the hooks region at its marked position.
 
-To migrate an existing consumer, delete the legacy region from its `begin` marker through its `end`
-marker, add both split marker pairs at their intended positions, then run the renderer.
+The split layout requires the `pre-commit-sync` artifact. Use either the single section or both split
+regions; partial or mixed marker layouts fail validation.
+
+To migrate an existing consumer:
+
+1. Delete the legacy region from its `begin` marker through its `end` marker.
+1. Add both split marker pairs at their intended positions.
+1. Run the renderer.
 
 ## Adopt into a new repository
 
@@ -110,10 +115,12 @@ From the consumer root, render the managed pre-commit entries:
 python3 scripts/manage-nautilus-engineering-pre-commit.py render
 ```
 
-The renderer removes byte-identical unmanaged copies of selected definitions. It stops if an
-unmanaged definition has the same repository or hook identity but different content. Preserve the
-local variant by leaving that fragment unselected, or reconcile the difference as an explicit part
-of the adoption.
+The renderer handles unmanaged copies of selected definitions as follows:
+
+- **Identical copies**: It removes byte-identical copies.
+- **Local variants**: It stops if a definition has the same repository or hook identity but different
+  content. Preserve the local variant by leaving that fragment unselected, or reconcile the difference
+  as an explicit part of the adoption.
 
 Review the complete consumer diff, including the lock and checker. Then verify the worktree copies
 and rendered section:
@@ -156,10 +163,11 @@ If the Markdown or YAML policy must differ, vendor its shared baseline to anothe
 configuration applies because Taplo does not support cross-file inheritance.
 
 Render the sync hooks, run both checker modes from the preceding section, and keep the remaining
-pre-commit definitions local. Use the split layout when sync checks must run first while shared
-tool definitions follow NautilusTrader's general checks. Move another definition into the managed
-hooks region only after its local variant has been reconciled. This preserves NautilusTrader's
-Markdown exclusions and additional local hooks.
+pre-commit definitions local. Use the split layout when sync checks must run first while shared tool
+definitions follow NautilusTrader's general checks.
+
+Move another definition into the managed hooks region only after its local variant has been reconciled.
+This preserves NautilusTrader's Markdown exclusions and additional local hooks.
 
 NautilusTrader uses a different target for the written Markdown standard. Add it to an existing
 lock with:
@@ -223,10 +231,11 @@ Run the gate from the consumer root:
 bash scripts/check-cargo-cooldown.sh --all --cache target/.cargo-cooldown.json
 ```
 
-The full check covers every tracked `Cargo.lock`, including versions already committed or pulled
-from another branch. Without a configured trusted base, it needs no Git comparison base or full
-checkout history. Keep the diff-based mode for dependency-update and pre-commit feedback; an empty
-diff does not prove that resolved dependencies satisfy the cooldown.
+The full check covers every tracked `Cargo.lock`, including versions already committed or pulled from
+another branch. Without a configured trusted base, it needs no Git comparison base or full checkout history.
+
+Keep the diff-based mode for dependency-update and pre-commit feedback; **an empty diff does not prove**
+that resolved dependencies satisfy the cooldown.
 
 Cooldown reduces exposure to newly published malicious registry releases. It does not certify
 older releases, sandbox build scripts, or vet Git and local path dependencies.
@@ -249,9 +258,10 @@ paths. Enforce these requirements in the consumer:
 ### Cache full checks
 
 The cache records only successful full checks; failed checks are not cached. When the lockfiles,
-policy, audits, database, script, and trusted-base content are all unchanged, the check returns
-early without registry requests. A change to any of them requires another full check. Keep the
-cache as local verification state and never restore it from an untrusted source.
+policy, audits, database, script, and trusted-base content are all unchanged, the check returns early
+without registry requests. A change to any of them requires another full check.
+
+Keep the cache as local verification state and **never restore it from an untrusted source**.
 
 ### Commit the publication-date database
 
@@ -270,8 +280,10 @@ the base holds at the same path:
 A recorded date that disagrees with the registry fails the gate.
 
 The dependency-update transaction records dates for every change it accepts. It ends with the same
-full-scope check as the compilation gate, so a version that already violated the cooldown when it
-was committed also fails the update. After any manual lockfile edit, run
+full-scope check as the compilation gate, so a version that already violated the cooldown when it was
+committed also fails the update.
+
+After any manual lockfile edit, run
 `bash scripts/check-cargo-cooldown.sh --update-db` to reconcile the database; it also prunes
 entries that no tracked lock resolves.
 
@@ -283,8 +295,9 @@ the offline full check trusts it. To close that gap, set `trusted-base` in
 
 The full check then re-verifies against crates.io each database entry that the trusted base lacks.
 When the trusted base has no database, the seed rule applies: only entries for versions that its
-lockfiles did not resolve are re-verified. The check caches the pass, so registry requests repeat only when the branch or the trusted
-base changes.
+lockfiles did not resolve are re-verified.
+
+The check caches the pass, so registry requests repeat only when the branch or the trusted base changes.
 
 - A checkout that cannot resolve the trusted base fails the gate.
 - A shallow checkout that lacks the trusted base trusts recorded dates instead. Keep a
@@ -305,9 +318,12 @@ git switch --detach <reviewed-revision>
 sync/sync.bash update --consumer ../nautilus_trader
 ```
 
-New artifacts added to a recorded profile remain unadopted. Add them explicitly with one or more
-`--add` options. Update stops if the source manifest no longer contains a locked artifact, and it
-does not change an existing target override.
+The update command preserves the locked selection:
+
+- New artifacts added to a recorded profile remain unadopted. Add them explicitly with one or more
+  `--add` options.
+- Update stops if the source manifest no longer contains a locked artifact.
+- Update does not change an existing target override.
 
 Review every changed artifact together with the revision and hashes in
 `.nautilus-engineering.lock`. Repeat the worktree, staged, and consumer integration checks used for
@@ -324,12 +340,13 @@ sync/sync.bash update \
   --target github-action-pin-check=scripts/ci/check-github-action-shas.sh
 ```
 
-Changing a locked target or removing an artifact requires a separate migration. Run `vendor` with
-the complete intended selection and every retained target override. The command reports paths that
-were managed by the old lock but are absent from the new selection. It leaves those paths unchanged;
-delete them only as an explicit, reviewed consumer change.
+Changing a locked target or removing an artifact requires a separate migration. Run `vendor` with the
+complete intended selection and every retained target override.
 
-Never rerun `vendor` with only the new artifact or profile when a consumer lock already exists.
+The command reports paths managed by the old lock that are absent from the new selection. It leaves
+those paths unchanged; delete them only as an explicit, reviewed consumer change.
+
+**Selection replacement**: Never rerun `vendor` with only the new artifact or profile when a consumer lock exists.
 `vendor` replaces the managed selection in the lock, while `update` preserves it.
 
 ## Adopt zizmor
@@ -338,10 +355,15 @@ The shared catalog pins zizmor, and `pre-commit-zizmor` owns its offline hook co
 The hook scans `.github/` with strict collection and an informational severity threshold.
 It keeps all rules enabled. Repository-specific exceptions remain local.
 
-Existing consumers add the hook with `update --add pre-commit-zizmor` and render the managed
-pre-commit section. Remove the old local zizmor hook if its settings differ from the shared
-fragment; the renderer rejects conflicting definitions. CI reads the version with
-`bash scripts/tool-version.sh zizmor` after adopting `shared-tool-catalog` and `tool-version`.
+For an existing consumer:
+
+1. Add the hook with `update --add pre-commit-zizmor`.
+1. Remove the old local zizmor hook if its settings differ from the shared fragment; the renderer
+   rejects conflicting definitions.
+1. Render the managed pre-commit section.
+
+After adopting `shared-tool-catalog` and `tool-version`, CI reads the version with
+`bash scripts/tool-version.sh zizmor`.
 Keep token permissions, online audit execution, and SARIF publication in the consumer workflow.
 
 ## Consumer file contracts
@@ -369,17 +391,22 @@ special-file targets, duplicate targets, and overlapping managed paths. It reads
 the committed source revision, stages replacements in the consumer, and replaces the lock last.
 
 During replacement, prior files and the old lock remain under the temporary directory named in
-`.nautilus-engineering.syncing`. The command restores them after an ordinary error or handled
-interrupt. An abrupt interruption leaves the marker, process lock, and readable backups for manual
-recovery. Inspect the marker and backup directory before removing either lock. The checker fails
-while the marker or process lock remains.
+`.nautilus-engineering.syncing`.
 
-The lock and checker detect accidental drift. They are not a security boundary: a consumer change
-can modify a managed file, its lock, and the checker together. Review those changes as one unit. The
-transaction also assumes no hostile concurrent filesystem changes and does not provide
-database-style durability across power loss or filesystem failure.
+- **Ordinary error or handled interrupt**: The command restores the prior files and old lock.
+- **Abrupt interruption**: The command leaves the marker, process lock, and readable backups for manual
+  recovery. Inspect the marker and backup directory before removing either lock.
 
-Consumer repositories must retain LF line endings for vendored text. The staged checker reads Git
-blobs and enforces executable modes on every platform. Worktree mode skips executable-mode checks
-on Git Bash because Windows filesystems do not expose the Git executable bit reliably; its success
-message reports that limitation.
+The checker fails while the marker or process lock remains.
+
+**Trust boundary**: The lock and checker detect accidental drift. They are not a security boundary:
+a consumer change can modify a managed file, its lock, and the checker together. Review those changes as one unit.
+
+The transaction assumes no hostile concurrent filesystem changes and does not provide database-style
+durability across power loss or filesystem failure.
+
+Consumer repositories must retain LF line endings for vendored text.
+
+- **Staged mode**: The checker reads Git blobs and enforces executable modes on every platform.
+- **Worktree mode**: The checker skips executable-mode checks on Git Bash because Windows filesystems
+  do not expose the Git executable bit reliably; its success message reports that limitation.

@@ -13,11 +13,11 @@ installed.
 
 Each rule has one of three levels:
 
-- **Required:** Applies to every in-scope shell artifact. Rules stated as unqualified imperatives
+- **Required**: Applies to every in-scope shell artifact. Rules stated as unqualified imperatives
   such as "Use" and "Do not", or with "must", are Required.
-- **Preferred:** Identifies the default when more than one valid form exists. Preferred rules use
+- **Preferred**: Identifies the default when more than one valid form exists. Preferred rules use
   "Prefer" and do not affect conformance.
-- **Transitional:** Applies to the named construct when it is added or substantially edited, and is
+- **Transitional**: Applies to the named construct when it is added or substantially edited, and is
   labeled **Transitional** or described as transitional. Existing instances may remain until a
   separate migration.
 
@@ -25,11 +25,15 @@ An unchanged existing instance of a Transitional construct conforms to this stan
 transitional rule only to the named construct that is added or substantially edited. Changes
 elsewhere in the same file do not trigger a file-wide migration.
 
-Statements with "may" or "allowed" grant bounded permissions rather than obligations. Any
-condition limiting that permission is Required. A repository may document a narrower local
-exception where its supported environment or existing interface requires one. The exception must
-name the exact artifacts or construct it covers, the rule it changes, and the environment or
-interface that requires it.
+Statements with "may" or "allowed" grant bounded permissions rather than obligations. Any condition
+limiting that permission is Required.
+
+A repository may document a narrower local exception where its supported environment or existing
+interface requires one. The exception must name:
+
+- The exact artifacts or construct it covers.
+- The rule it changes.
+- The environment or interface that requires it.
 
 ## Authority and references
 
@@ -40,8 +44,9 @@ to resolve POSIX `sh` semantics.
 
 The [Google Shell Style Guide](https://google.github.io/styleguide/shellguide.html) is an advisory
 reference. This standard takes precedence where its portability target, extensions, shebangs,
-formatting, or repository conventions differ. ShellCheck and `shfmt` enforce a mechanical subset;
-clean tool output does not prove runtime behavior.
+formatting, or repository conventions differ.
+
+ShellCheck and `shfmt` enforce a mechanical subset; clean tool output does not prove runtime behavior.
 
 ## Choose shell for the task
 
@@ -68,8 +73,9 @@ Prefer to keep a command inline when it is short, used once, and clearer in its 
 one stable command only to add another file.
 
 Use another language when the task centers on structured-data processing, complex state, parallel
-work, performance-sensitive logic, or domain behavior that needs extensive unit tests. Script
-length is a review signal rather than an automatic failure: consider the expected growth and
+work, performance-sensitive logic, or domain behavior that needs extensive unit tests.
+
+Script length is a review signal rather than an automatic failure: consider the expected growth and
 whether someone other than the author can maintain the control flow safely.
 
 When extracting CI logic, keep workflow expressions, permissions, secret selection, and runner
@@ -97,10 +103,11 @@ Use POSIX `sh` for a small bootstrap or wrapper only when avoiding a Bash depend
 supported interface. Test the script under every supported `/bin/sh`; simple syntax and a clean
 ShellCheck result do not prove portable behavior across different `sh` implementations.
 
-The extension policy is transitional because existing filenames may predate it, so some `.sh`
-files contain Bash. Treat their shebangs as the source of truth. Do not rename an existing script
-only to change its extension. Apply the policy to new files and to scoped renames that already
-update every call site and document.
+The extension policy is **transitional** because existing filenames may predate it, so some `.sh`
+files contain Bash. Treat their shebangs as the source of truth.
+
+Do not rename an existing script only to change its extension. Apply the policy to new files and to
+scoped renames that already update every call site and document.
 
 ## Define the portability target
 
@@ -140,11 +147,14 @@ capability or operating system and implement both forms.
 | Extended matching | `grep -P`      | No common form    | Use `grep -E` when it expresses the same pattern.         |
 | Nanosecond time   | `date +%N`     | No common form    | Use an existing run ID or `$RANDOM` for cache busting.    |
 
-Quote paths and expansions so spaces do not change argument boundaries. Do not assume filesystem
-paths are case-sensitive. Resolve bundled resources from the script location. Resolve a target
-repository from an explicit root argument or the repository discovery mechanism defined by the
-script's interface. Treat user-supplied relative paths according to that interface. Do not make
-behavior depend on an accidental working directory.
+For paths and expansions:
+
+- Quote paths and expansions so spaces do not change argument boundaries.
+- Do not assume filesystem paths are case-sensitive.
+- Resolve bundled resources from the script location.
+- Resolve a target repository from an explicit root argument or the repository discovery mechanism
+  defined by the script's interface. Treat user-supplied relative paths according to that interface.
+  Do not make behavior depend on an accidental working directory.
 
 Use only commands installed by the documented development or runner setup. If an optional command
 is necessary, check for it with `command -v` and report how to install or replace it. Store scripts
@@ -159,10 +169,11 @@ with LF endings through `.gitattributes` or an equivalent repository mechanism.
 - Keep component-specific scripts beside the component when a central script directory would hide
   their ownership.
 
-Prefer lowercase kebab-case under general and CI script directories. Name a companion regression
-test to match the repository's documented test inventory. Within that constraint, prefer
-`test-<script-name>.bash` or `test-<script-name>.sh` so the tested pair sorts together. Prefer an
-established local naming family for repository hooks and component scripts.
+Prefer lowercase kebab-case under general and CI script directories. Prefer an established local
+naming family for repository hooks and component scripts.
+
+Name a companion regression test to match the repository's documented test inventory. Within that
+constraint, prefer `test-<script-name>.bash` or `test-<script-name>.sh` so the tested pair sorts together.
 
 Prefer to keep each script focused on one task and to extend an existing script when new logic
 shares the same responsibility.
@@ -186,7 +197,7 @@ failure must propagate.
 Outside the Transitional test-fake permission below, explain the specific control flow that makes a
 required option unsafe.
 
-**Transitional:** A test-generated standalone executable may use narrower shell options when an
+**Transitional**: A test-generated standalone executable may use narrower shell options when an
 option would prevent it from reproducing the intended command behavior. Existing test fakes with
 narrower options may remain. When adding or substantially editing such a fake, explain each omitted
 option beside the generated prologue and handle any relevant failure status explicitly.
@@ -225,7 +236,7 @@ value=$(produce_value)
 
 - Keep machine-readable output on standard output and diagnostics on standard error when callers
   capture the result.
-- **Transitional:** Use `printf` for arbitrary or variable data, output without a newline,
+- **Transitional**: Use `printf` for arbitrary or variable data, output without a newline,
   escape-sensitive text, and machine-readable output with a defined format. Existing `echo` calls
   may remain until the command or its output contract is substantially edited. `echo` is allowed
   for fixed human-readable lines that do not begin with an option or depend on escape handling.
@@ -239,14 +250,18 @@ value=$(produce_value)
   environment or the tool's supported secret input.
 - Use comments only for constraints or behavior that the commands do not make clear.
 
+### Execution and sourcing
+
 Give a standalone script executable permissions when users or tools call it as `./path`. A
 sourceable file does not need executable permissions. Git's tracked executable mode remains the
 source of truth on filesystems that do not expose Unix modes reliably.
 
 Prefer executing a script in a child process. Source a file only when the caller must share its
-functions or shell state. A sourceable Bash file must not call `exit` or change the caller's shell
-options. Return errors from functions and let the caller choose its error policy. Use
-`${BASH_SOURCE[0]}` instead of `$0` to resolve the source file's location.
+functions or shell state. For a sourceable Bash file:
+
+- Do not call `exit` or change the caller's shell options.
+- Return errors from functions and let the caller choose its error policy.
+- Use `${BASH_SOURCE[0]}` instead of `$0` to resolve the source file's location.
 
 For a standalone script that needs several functions, prefer to use a `main` entry point, define
 `main` first, and place called functions below their callers. When a script uses `main`, invoke
@@ -259,18 +274,24 @@ dependencies, build variables, and concurrency limits in the task runner, then i
 with an explicit interpreter.
 
 Provide CI workflow context through named environment variables. Prefer to call the same script
-used locally where practical. Keep CI-specific output files and expressions at the workflow
-boundary when the script is also a local command. A script dedicated to one CI system may write
-its integration files when that behavior is its stated purpose.
+used locally where practical.
+
+Keep CI-specific output files and expressions at the workflow boundary when the script is also a
+local command. A script dedicated to one CI system may write its integration files when that
+behavior is its stated purpose.
 
 Multiline inline shell follows the same quoting, failure-handling, and portability rules. Extract it
 when branches, loops, retries, cleanup, or reusable behavior warrant focused tests.
 
 ## Format and lint
 
-Nautilus Engineering's tool catalog owns shared ShellCheck and `shfmt` versions. Its managed shell
-hook definition owns formatter and linter options, and automated checks keep the embedded hook
-revisions aligned with the catalog. Consumer locks record the exact source revision and hashes.
+Version and configuration ownership:
+
+- Nautilus Engineering's tool catalog owns shared ShellCheck and `shfmt` versions.
+- Its managed shell hook definition owns formatter and linter options. Automated checks keep the
+  embedded hook revisions aligned with the catalog.
+- Consumer locks record the exact source revision and hashes.
+
 Do not repeat numeric tool versions or complete option lists in this standard.
 
 The shared `shfmt` definition uses two-space indentation, indented case branches, consistent
@@ -303,10 +324,16 @@ runtime test.
 ## Test behavior
 
 Run the smallest test that exercises the changed branches and failure paths. Add a companion shell
-test for logic that can regress independently of its workflow. This includes parsing, multi-branch
-decisions, retries and cleanup, policy checks, and material external side effects. A domain-level
-suite may cover cooperating scripts, and a thin wrapper does not need a one-to-one test when that
-suite invokes it and proves its behavior.
+test for logic that can regress independently of its workflow, including:
+
+- Parsing.
+- Multi-branch decisions.
+- Retries and cleanup.
+- Policy checks.
+- Material external side effects.
+
+A domain-level suite may cover cooperating scripts. A thin wrapper does not need a one-to-one test
+when that suite invokes it and proves its behavior.
 
 Each companion test:
 

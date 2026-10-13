@@ -70,27 +70,35 @@ store without adding special cases to the shared runner.
 
 ### Cargo audit
 
-Each `[[cargo.audit]]` entry requires `lockfile`. The optional `ignore` array accepts RustSec
-advisory IDs. The optional `deny` array accepts `warnings`, `unmaintained`, `unsound`, and `yanked`.
+Each `[[cargo.audit]]` entry requires `lockfile`. Optional arrays:
+
+- `ignore`: RustSec advisory IDs.
+- `deny`: `warnings`, `unmaintained`, `unsound`, and `yanked`.
+
 Set `report = true` to print successful scanner output; findings still fail the audit.
 
 ### Cargo deny
 
-Each `[[cargo.deny]]` entry requires `manifest`. The optional fields are `config`, `all-features`,
-and `checks`. Checks default to `advisories`, `licenses`, `sources`, and `bans`. The runner always
-uses `--locked`, so stale dependency resolution fails instead of changing the Cargo lockfile.
+Each `[[cargo.deny]]` entry requires `manifest`. Optional fields are `config`, `all-features`, and
+`checks`. Checks default to `advisories`, `licenses`, `sources`, and `bans`.
+
+The runner always uses `--locked`, so stale dependency resolution fails instead of changing the Cargo lockfile.
 
 ### Cargo vet
 
-Each `[[cargo.vet]]` entry requires `manifest`. Set `store` when the supply-chain directory is not
-the default for that workspace. The runner always uses `--locked`, so missing or inconsistent local
-imported-audit state fails. Refresh and review remote imports outside the audit gate.
+Each `[[cargo.vet]]` entry requires `manifest`. Set `store` when the supply-chain directory is not the
+default for that workspace.
+
+The runner always uses `--locked`, so missing or inconsistent local imported-audit state fails.
+Refresh and review remote imports outside the audit gate.
 
 ### Python
 
-Each `[[python]]` entry requires `project` and a `python` major and minor version. Select all extras
-with `all-extras`. Select all dependency groups with `all-groups`, or name individual `groups`, but
-do not use both. `ignore-vulns` records repository-owned pip-audit exceptions.
+Each `[[python]]` entry requires `project` and a `python` major and minor version. Optional fields:
+
+- `all-extras`: select all extras.
+- `all-groups` or `groups`: select all dependency groups or name individual groups. Do not use both.
+- `ignore-vulns`: repository-owned pip-audit exceptions.
 
 The runner exports the frozen uv resolution without local project, workspace, or path packages,
 then invokes the exact central `pip-audit` version in an isolated uv environment. It enables hash
@@ -105,9 +113,10 @@ Each `[[node]]` entry requires `project`. `production = true` gates on `npm audi
 - `report`: show full-tree findings without failing the run.
 - `gate`: fail on full-tree findings.
 
-`signatures = true` gates on registry signatures. The signature command sets its release-age floor
-to zero because it re-resolves package metadata; installation cooldown remains a consumer policy.
-Each Node entry must enable production, full-tree, or signature auditing.
+`signatures = true` gates on registry signatures. The signature command sets its release-age floor to
+zero because it re-resolves package metadata; installation cooldown remains a consumer policy.
+
+Each Node entry **must enable production, full-tree, or signature auditing**.
 
 ### OSV Scanner
 
@@ -122,10 +131,15 @@ Install the central Cargo scanner versions and OSV Scanner with:
 bash scripts/install-security-tools.sh
 ```
 
-The installer skips matching versions, installs stale or missing Cargo tools with exact versions,
-uses the checksummed OSV Scanner release installer, and verifies installed versions before it
-returns. Install the central uv version through the consumer's existing uv bootstrap. Node and npm
-remain part of the consumer's runtime toolchain.
+The installer:
+
+- Skips matching versions.
+- Installs stale or missing Cargo tools with exact versions.
+- Uses the checksummed OSV Scanner release installer.
+- Verifies installed versions before returning.
+
+Install the central uv version through the consumer's existing uv bootstrap. Node and npm remain part
+of the consumer's runtime toolchain.
 
 Validate policy without requiring scanners:
 
@@ -145,10 +159,12 @@ Run every configured dependency audit:
 python3 scripts/security-audit.py run
 ```
 
-Tool checks run before dependency commands. A missing or stale scanner stops the run before it can
-produce results from a different scanner release. Audit commands capture successful output and
-show it only for configured reports. Failures show their captured output, and the runner continues
-through the remaining dependency surfaces before returning a failing status.
+**Version gate**: Tool checks run before dependency commands. A missing or stale scanner stops the run
+before it can produce results from a different scanner release.
+
+**Audit results**: Commands capture successful output and show it only for configured reports.
+Failures show their captured output, and the runner continues through the remaining dependency
+surfaces before returning a failing status.
 
 ## Use one entry point locally and in CI
 
@@ -168,7 +184,12 @@ the workflow because that creates a second policy path.
 
 ## Update shared releases
 
-Update a shared version once in Nautilus Engineering, validate its release and command-line
-compatibility, run this repository's pre-flight gate, and commit the reviewed candidate. Consumers
-then update their vendored artifacts and lock to that exact engineering commit. A shared commit
-does not change a consumer until its own adoption is reviewed and committed.
+In Nautilus Engineering:
+
+1. Update the shared version once.
+1. Validate its release and command-line compatibility.
+1. Run this repository's pre-flight gate.
+1. Commit the reviewed candidate.
+
+Consumers then update their vendored artifacts and lock to that exact engineering commit. A shared
+commit does not change a consumer until its own adoption is reviewed and committed.
