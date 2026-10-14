@@ -22,25 +22,29 @@ Nautilus Engineering integration creates the exposure.
 **Keep reports private**: Do not report a security vulnerability in a public issue.
 
 Use [GitHub Security Advisories](https://github.com/nautechsystems/nautilus_engineering/security/advisories/new)
-for private disclosure and coordination. Alternatively, email <security@nautechsystems.io>. You may
-request the Nautech Systems PGP key for sensitive email reports.
+for private disclosure and coordination. You can also email <security@nautechsystems.io>. You may request the
+Nautech Systems PGP key for sensitive email reports.
 
-Include the vulnerability description, reproduction steps, affected revisions or artifacts,
-expected impact, and a suggested fix when available.
+Include this information:
+
+- Vulnerability description.
+- Reproduction steps.
+- Affected revisions or artifacts.
+- Expected impact.
+- Suggested fix, if available.
 
 ## Response targets
 
-Nautech Systems commits to:
+Nautech Systems commits to these response targets:
 
 - An initial response within 48 hours.
 - A status update within 7 days with the initial assessment.
-- A fix for critical vulnerabilities within 30 days and other confirmed vulnerabilities within 90
-  days.
-- Coordinating a public disclosure date with the reporter.
+- A fix for critical vulnerabilities within 30 days and other confirmed vulnerabilities within 90 days.
+- Coordination of a public disclosure date with the reporter.
 
 ## Responsible disclosure
 
-When investigating or reporting a vulnerability:
+When you investigate or report a vulnerability:
 
 - Limit testing to what is necessary to demonstrate the issue.
 - Do not access unauthorized data or disrupt systems.
@@ -51,8 +55,8 @@ Nautech Systems credits reporters in security advisories unless they prefer to r
 
 ## Supported revisions
 
-Only the latest revision on `main` is supported. Consumer repositories pin exact commits and must
-review and adopt security fixes explicitly; a change here never updates a consumer automatically.
+Only the latest revision on `main` is supported. Consumer repositories pin exact commits and must review and
+adopt security fixes explicitly. A change here never updates a consumer automatically.
 
 ## Bug bounty
 

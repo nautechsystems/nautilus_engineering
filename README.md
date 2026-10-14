@@ -1,8 +1,8 @@
 # Nautilus Engineering
 
-Nautilus Engineering maintains shared engineering standards, lint configurations, pre-commit definitions,
-and repository checks for Nautilus projects. Consumer repositories vendor selected files at a pinned commit,
-review each update locally, and keep their own project policy.
+Nautilus Engineering provides shared engineering standards, lint configurations, pre-commit definitions, and
+repository checks for Nautilus projects. Consumer repositories vendor selected files at a pinned commit. They
+review each update locally and keep their own project policy.
 
 It covers stable behavior that should stay consistent across projects. Release processes,
 deployment logic, generated-file exceptions, compiler pins, and other repository-specific
@@ -12,12 +12,12 @@ decisions stay with each consumer.
 
 1. A shared change is committed and tested here.
 1. A consumer vendors selected artifacts from that exact commit.
-1. The sync command records the source revision, manifest hash, target paths, file hashes, and
-   executable modes in `.nautilus-engineering.lock`.
+1. The sync command records the source revision, manifest hash, target paths, file hashes, and executable
+   modes in `.nautilus-engineering.lock`.
 1. The consumer reviews and tests the adoption as a normal repository change.
 
-A commit here never changes a consumer by itself, so updates stay reproducible and each repository
-adopts them on its own schedule.
+A commit here never changes a consumer by itself. Updates stay reproducible, and each repository adopts them
+on its own schedule.
 
 ## Repository map
 
@@ -44,9 +44,9 @@ adopts them on its own schedule.
 - [`docs/supply-chain-security.md`](docs/supply-chain-security.md): the shared scanner catalog,
   typed audit policy, installation path, and local and CI wiring for dependency security checks.
 
-Before committing a lock to a consumer, make its source revision available from the repository URL
-in [`sync/manifest.toml`](sync/manifest.toml). The sync command reads committed content from the
-local source checkout and never fetches, commits, or pushes either repository.
+Before you commit a lock to a consumer, make its source revision available from the repository URL in
+[`sync/manifest.toml`](sync/manifest.toml). The sync command reads committed content from the local source
+checkout. It never fetches, commits, or pushes either repository.
 
 ## Ownership boundaries
 
@@ -60,14 +60,13 @@ Shared files provide a baseline rather than a complete repository policy:
 - Makefiles and workflows remain local and call shared scripts where the behavior is reusable.
 - Advisory exceptions, generated-file rules, release jobs, and deployment policy remain local.
 
-Configuration baselines vendor as follows:
+Consumers vendor configuration baselines as follows:
 
-- Markdownlint and yamllint baselines can be vendored to another path and extended from the
-  consumer's root configuration.
-- Taplo configuration is synchronized as a whole file because Taplo does not support cross-file
+- Markdownlint and yamllint baselines can be vendored to another path and extended from the consumer's root
+  configuration.
+- Consumers synchronize the whole Taplo configuration file because Taplo does not support cross-file
   configuration inheritance.
-- The Rust formatting baseline, `config/rustfmt.toml`, vendors to a Cargo repository's root by
-  default.
+- The Rust formatting baseline, `config/rustfmt.toml`, vendors to a Cargo repository's root by default.
 
 The root `tools.toml` catalogs shared engineering tools and this repository's validation tools.
 Consumers vendor it to `.nautilus-engineering/tools.toml`. CI reads its pins through the shared
@@ -83,45 +82,44 @@ Run the complete local CI-readiness gate:
 make pre-flight
 ```
 
-`make pre-flight` aliases `make pre-commit`. It runs every formatter, linter, and repository check,
-including private-key detection, GitHub Action pin validation, and `make check`.
+`make pre-flight` aliases `make pre-commit`. It runs each formatter, linter, and repository check, including
+private-key detection, GitHub Action pin validation, and `make check`.
 
 The Makefile runs the exact cataloged prek release through uv. Install the hooks with `prek install`.
 
-For a faster loop, run only the syntax checks, tool-pin validation, and repository tests:
+To run only the syntax checks, tool-pin validation, and repository tests, use:
 
 ```bash
 make check
 ```
 
-Make preserves spaces in discovered filenames and stops if Git discovery fails.
+Make keeps spaces in discovered filenames and stops if Git discovery fails.
 
-To select files, set `PYTHON_FILES`, `SHELL_FILES`, or `TEST_FILES` on the `make` command line, for
-example: `make test TEST_FILES=tests/test-sync.bash`. Use `ACTION_FILES` with
-`make check-github-action-pins`.
+To select files, set `PYTHON_FILES`, `SHELL_FILES`, or `TEST_FILES` on the `make` command line. For example,
+use `make test TEST_FILES=tests/test-sync.bash`. Use `ACTION_FILES` with `make check-github-action-pins`.
 
-Selections are shell-word lists: quote filenames containing spaces inside the value.
-Empty or malformed explicit lists fail. Values are parsed without a shell, after Make expands
-its own variable references and functions.
+Selections are shell-word lists: quote filenames containing spaces inside the value. Empty or malformed
+explicit lists fail. The runner parses values without a shell after Make expands its own variable references
+and functions.
 
 This repository has no dependency graph to audit. Its tests use controlled fixtures for the shared
 supply-chain runner, installer, exact version checks, policy validation, and secondary dependency paths.
 
-Every maintained script has behavioral coverage, and CI runs every tracked `tests/test-*.bash` file.
+Each maintained script has behavioral coverage. CI runs each tracked `tests/test-*.bash` file.
 
 Consumer pre-flight targets run their own unit tests and configured dependency audits.
 
 ### Adoption status
 
-To compare each consumer's lock revision with the current source `HEAD`, including its changed and
-unadopted artifacts, run:
+To compare each consumer's lock revision with the source `HEAD`, run the command below. The report includes
+changed and unadopted artifacts.
 
 ```bash
 make adoption-status CONSUMERS="../consumer-a ../consumer-b"
 ```
 
-The report requires explicit consumer paths. It reads only locks and local Git history, never
-changes a consumer, and never scans neighboring directories.
+The report requires explicit consumer paths. It reads only locks and local Git history. It never changes a
+consumer or scans neighboring directories.
 
 ### Tool updates
 
@@ -136,8 +134,8 @@ make check-tool-updates
 
 The report lists each pin with its latest release, the release's UTC timestamp, and its age.
 
-**Cooldown**: The default is 3 days; set `COOLDOWN_DAYS` to change it. When the latest release is
-still within the cooldown, following rows list every newer release between the pin and latest.
+**Cooldown**: The default is 3 days. To change it, set `COOLDOWN_DAYS`. When the latest release is still
+within the cooldown, subsequent rows list each newer release between the pin and the latest release.
 
 In a terminal, release colors show age:
 
@@ -153,21 +151,21 @@ The summary sorts each pin that differs from its latest release into one group:
 | Cooldown hold | The latest release is within the cooldown, and no newer one is past it | No              |
 | Pin mismatch  | The latest release is past the cooldown but not newer than the pin     | Yes             |
 
-An upgradable pin's target is the **newest release past the cooldown**, which can be older than the
+An upgradable pin's target is the **newest release past the cooldown**. This target can be older than the
 latest release. Invalid catalog entries and failed release or upgrade-target lookups also fail the check.
 
-Update a pin here first; consumers adopt the reviewed commit.
+Update a pin here first. Consumers adopt the reviewed commit.
 
 ### CI validation
 
-CI runs on Linux and macOS, the supported development and validation platforms for this
-repository. Shared scripts remain portable for downstream use on Linux, macOS, and Windows through
-Git Bash or MSYS2, but this repository does not validate Windows development.
+CI runs on Linux and macOS, the supported development and validation platforms for this repository. Shared
+scripts remain portable for downstream use on Linux, macOS, and Windows through Git Bash or MSYS2. This
+repository does not validate Windows development.
 
-- Linux and macOS run the functional checks, repository tests, and tool catalog validation against
-  its pre-commit and workflow consumers.
-- Linux also runs the shell, Python, YAML, Markdown, and TOML linters, and checks that each GitHub
-  Action reference has a source comment and a full commit SHA that matches its named release tag.
+- Linux and macOS run the functional checks, repository tests, and tool catalog validation against its
+  pre-commit and workflow consumers.
+- Linux also runs the shell, Python, YAML, Markdown, and TOML linters. It checks each GitHub Action reference
+  for a source comment and a full commit SHA that matches its named release tag.
 
 ## License
 

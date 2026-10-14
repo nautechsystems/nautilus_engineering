@@ -1,7 +1,7 @@
 # Centralize Supply-Chain Security
 
-Nautilus repositories use the same pinned scanners and audit runner while retaining their own
-dependency scope, advisory exceptions, and enforcement choices.
+Nautilus repositories use the same pinned scanners and audit runner. Each repository keeps its own dependency
+scope, advisory exceptions, and enforcement choices.
 
 ## Ownership
 
@@ -16,15 +16,14 @@ dependency scope, advisory exceptions, and enforcement choices.
 | Local and CI entry points           | Consumer repository  | `Makefile` and workflow files                   |
 | Tools used by only one repository   | Consumer repository  | Local `tools.toml` or Cargo workspace metadata  |
 
-The shared version readers use `.nautilus-engineering/tools.toml` first, then a consumer-local
-catalog for tools that are not shared. They fail if both catalogs define the same tool. This keeps
-one release decision for shared tools without absorbing repository-specific tools.
+The shared version readers use `.nautilus-engineering/tools.toml` first, then a consumer-local catalog for
+tools that are not shared. They fail if both catalogs define the same tool. Thus, shared tools have one
+release decision, and consumers keep control of repository-specific tools.
 
 ## Configure a consumer
 
-Create `security-audit.toml` at the repository root. Every dependency surface is explicit. Paths
-must exist, use POSIX separators, and stay within the repository. Unknown fields and unsupported
-values fail validation.
+Create `security-audit.toml` at the repository root. Each dependency surface is explicit. Paths must exist,
+use POSIX separators, and stay within the repository. Unknown fields and unsupported values fail validation.
 
 ```toml
 version = 1
@@ -70,27 +69,27 @@ store without adding special cases to the shared runner.
 
 ### Cargo audit
 
-Each `[[cargo.audit]]` entry requires `lockfile`. Optional arrays:
+Each `[[cargo.audit]]` entry requires `lockfile`. These arrays are optional:
 
 - `ignore`: RustSec advisory IDs.
 - `deny`: `warnings`, `unmaintained`, `unsound`, and `yanked`.
 
-Set `report = true` to print successful scanner output; findings still fail the audit.
+To print successful scanner output, set `report = true`. Findings still fail the audit.
 
 ### Cargo deny
 
 Each `[[cargo.deny]]` entry requires `manifest`. Optional fields are `config`, `all-features`, and
 `checks`. Checks default to `advisories`, `licenses`, `sources`, and `bans`.
 
-The runner always uses `--locked`, so stale dependency resolution fails instead of changing the Cargo lockfile.
+The runner always uses `--locked`. Stale dependency resolution fails and does not change the Cargo lockfile.
 
 ### Cargo vet
 
 Each `[[cargo.vet]]` entry requires `manifest`. Set `store` when the supply-chain directory is not the
 default for that workspace.
 
-The runner always uses `--locked`, so missing or inconsistent local imported-audit state fails.
-Refresh and review remote imports outside the audit gate.
+The runner always uses `--locked`. Missing or inconsistent local imported-audit state fails. Refresh and
+review remote imports outside the audit gate.
 
 ### Python
 
@@ -100,9 +99,9 @@ Each `[[python]]` entry requires `project` and a `python` major and minor versio
 - `all-groups` or `groups`: select all dependency groups or name individual groups. Do not use both.
 - `ignore-vulns`: repository-owned pip-audit exceptions.
 
-The runner exports the frozen uv resolution without local project, workspace, or path packages,
-then invokes the exact central `pip-audit` version in an isolated uv environment. It enables hash
-checking and disables pip resolution so the audit covers the locked third-party dependency set.
+The runner exports the frozen uv resolution without local project, workspace, or path packages. Then it runs
+the exact central `pip-audit` version in an isolated uv environment. It enables hash checking and disables pip
+resolution. Thus, the audit covers the locked third-party dependency set.
 
 ### Node
 
@@ -113,8 +112,8 @@ Each `[[node]]` entry requires `project`. `production = true` gates on `npm audi
 - `report`: show full-tree findings without failing the run.
 - `gate`: fail on full-tree findings.
 
-`signatures = true` gates on registry signatures. The signature command sets its release-age floor to
-zero because it re-resolves package metadata; installation cooldown remains a consumer policy.
+`signatures = true` gates on registry signatures. The signature command sets its release-age floor to zero
+because it re-resolves package metadata. The consumer still controls the installation cooldown.
 
 Each Node entry **must enable production, full-tree, or signature auditing**.
 
@@ -136,7 +135,7 @@ The installer:
 - Skips matching versions.
 - Installs stale or missing Cargo tools with exact versions.
 - Uses the checksummed OSV Scanner release installer.
-- Verifies installed versions before returning.
+- Verifies installed versions before it returns.
 
 Install the central uv version through the consumer's existing uv bootstrap. Node and npm remain part
 of the consumer's runtime toolchain.
@@ -153,7 +152,7 @@ Check installed scanner versions without auditing dependencies:
 python3 scripts/security-audit.py check-tools
 ```
 
-Run every configured dependency audit:
+Run each configured dependency audit:
 
 ```bash
 python3 scripts/security-audit.py run
@@ -162,9 +161,9 @@ python3 scripts/security-audit.py run
 **Version gate**: Tool checks run before dependency commands. A missing or stale scanner stops the run
 before it can produce results from a different scanner release.
 
-**Audit results**: Commands capture successful output and show it only for configured reports.
-Failures show their captured output, and the runner continues through the remaining dependency
-surfaces before returning a failing status.
+**Audit results**: Commands capture successful output and show it only for configured reports. Failures show
+their captured output. The runner continues through the remaining dependency surfaces before it returns a
+failing status.
 
 ## Use one entry point locally and in CI
 
@@ -178,9 +177,9 @@ check-security-tools: ; python3 scripts/security-audit.py check-tools
 security-audit: ; python3 scripts/security-audit.py run
 ```
 
-Add `security-audit` and the repository's unit tests to its pre-flight target. CI should invoke that
-target or `python3 scripts/security-audit.py run` directly. Do not reconstruct scanner commands in
-the workflow because that creates a second policy path.
+Add `security-audit` and the repository's unit tests to its pre-flight target. CI should invoke that target or
+`python3 scripts/security-audit.py run` directly. Do not reconstruct scanner commands in the workflow.
+Duplicate commands create a second policy path.
 
 ## Update shared releases
 
