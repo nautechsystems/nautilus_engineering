@@ -27,6 +27,7 @@ on its own schedule.
 | `config/`     | Baseline configuration for markdownlint, rustfmt, yamllint, and Taplo     |
 | `pre-commit/` | Repository entries rendered into managed consumer sections                |
 | `scripts/`    | Portable checks, version readers, installers, and dependency update tools |
+| `scripts/ci/` | CI tool installation, lint commands, and companion tests                  |
 | `sync/`       | The artifact catalog, vendoring command, checker, and section renderer    |
 | `docs/`       | Consumer adoption and supply-chain security guides                        |
 | `tests/`      | Focused tests for shared behavior                                         |
@@ -105,7 +106,9 @@ and functions.
 This repository has no dependency graph to audit. Its tests use controlled fixtures for the shared
 supply-chain runner, installer, exact version checks, policy validation, and secondary dependency paths.
 
-Each maintained script has behavioral coverage. CI runs each tracked `tests/test-*.bash` file.
+Each maintained script has behavioral coverage. CI runs each tracked `tests/test-*.bash` and
+`scripts/ci/test-*.bash` file through `make check`. CI-specific shell stays in `scripts/ci/` so the shell
+formatters and linters check it alongside shared scripts.
 
 Consumer pre-flight targets run their own unit tests and configured dependency audits.
 

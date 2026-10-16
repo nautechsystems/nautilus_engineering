@@ -73,7 +73,7 @@ if [[ "$status" != 0 || -s "$output_file" || "$fenced_before" != "$fenced_after"
 fi
 
 if ! grep -Fq \
-  "python3 -B scripts/check-markdown-tables.py \"\${markdown_files[@]}\"" \
+  'bash scripts/ci/lint-files.bash markdown' \
   "$CI_WORKFLOW"; then
   printf 'FAIL CI does not run the Markdown table check\n' >&2
   exit 1

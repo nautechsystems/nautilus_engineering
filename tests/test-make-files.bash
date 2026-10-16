@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/make-environment.bash disable=SC1091
 source "${SCRIPT_DIR}/make-environment.bash"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-temp_root=$(mktemp -d "${TMPDIR:-/tmp}/nautilus-make-files.XXXXXX")
+temp_root=$(mktemp -d "${TMPDIR:-/tmp}/test-nautilus-make-files.XXXXXX")
 trap 'rm -rf "$temp_root"' EXIT
 mkdir "${temp_root}/physical"
 ln -s "${temp_root}/physical" "${temp_root}/linked"
@@ -18,9 +18,16 @@ repo="${test_root}/repo with spaces"
 mkdir -p "$repo" "${test_root}/bin"
 cp "${REPO_ROOT}/Makefile" "${REPO_ROOT}/tools.toml" "$repo/"
 cp -R "${REPO_ROOT}/scripts" "$repo/"
+rm -f "${repo}/scripts/ci/"test-*.bash
 mkdir -p "${repo}/tests" "${repo}/.github/workflows"
 git -C "$repo" init --quiet
 printf 'value = 1\n' > "${repo}/module with space.py"
+mkdir -p "${repo}/scripts/ci"
+cat > "${repo}/scripts/ci/test-with space.bash" << 'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'CI test ran\n' >> "$MARKER"
+BASH
 cat > "${repo}/tests/test-with space.bash" << 'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -50,9 +57,10 @@ BASH
 cat > "${test_root}/bin/bash" << 'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "${1-}" == -n ]]; then
+script=${1-}
+if [[ "$script" == -n ]]; then
   printf '%s\n' "${@:2}" >> "$MARKER"
-elif [[ "${1-}" == *tests/test-* ]]; then
+elif [[ "${script##*/}" == test-* ]]; then
   printf '%s\n' "$1" >> "$MARKER"
 fi
 exec "$REAL_BASH" "$@"
@@ -112,6 +120,39 @@ for target in check-python check-shell test check-github-action-pins; do
     failures=$((failures + 1))
   fi
 done
+
+: > "$MARKER"
+expect_status 'CI companion tests are discovered beside their scripts' 0 \
+  make --no-print-directory -C "$repo" test
+if ! grep -Fx "${repo}/scripts/ci/test-with space.bash" "$MARKER" > /dev/null ||
+  ! grep -Fx 'CI test ran' "$MARKER" > /dev/null; then
+  echo 'FAIL CI companion was not executed with its intact filename' >&2
+  failures=$((failures + 1))
+fi
+
+for kind in python shell test action; do
+  : > "$MARKER"
+  expect_status "$kind listing emits NUL-delimited filenames without running checks" 0 \
+    python3 -B "${repo}/scripts/run-make-check.py" --list "$kind" file
+  [[ ! -s "$MARKER" ]]
+  case "$kind" in
+    python) selected="${repo}/module with space.py" ;;
+    shell | test) selected="${repo}/scripts/ci/test-with space.bash" ;;
+    action) selected="${repo}/.github/workflows/with space.yaml" ;;
+  esac
+  "$real_python" - "${test_root}/output" "$selected" << 'PY'
+from pathlib import Path
+import os
+import sys
+
+output = Path(sys.argv[1]).read_bytes()
+assert output.endswith(b"\0")
+assert os.fsencode(sys.argv[2]) in output.split(b"\0")
+PY
+done
+
+expect_status 'Markdown checking requires list mode' 2 \
+  python3 -B "${repo}/scripts/run-make-check.py" markdown file
 
 expect_status 'explicit quoted selection preserves spaces' 0 \
   make --no-print-directory -C "$repo" test 'TEST_FILES="tests/test-with space.bash"'

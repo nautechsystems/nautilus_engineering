@@ -27,20 +27,32 @@ ROOT = Path(__file__).resolve().parent.parent
 INVENTORIES = {
     "python": ("PYTHON_FILES", ["*.py"], (b".py",)),
     "shell": ("SHELL_FILES", ["scripts", "sync", "tests"], (b".bash", b".sh")),
-    "test": ("TEST_FILES", ["tests"], (b".bash",)),
+    "test": ("TEST_FILES", ["tests", "scripts/ci"], (b".bash",)),
     "action": ("ACTION_FILES", [".github"], (b".yaml", b".yml")),
+    "markdown": ("MARKDOWN_FILES", ["*.md"], (b".md",)),
 }
 
 
 def main() -> int:
     """Report discovery or checker failures without continuing with partial results."""
-    if len(sys.argv) != 3 or sys.argv[1] not in INVENTORIES:  # noqa: PLR2004 - two required arguments
+    list_only = sys.argv[1:2] == ["--list"]
+    arguments = sys.argv[2:] if list_only else sys.argv[1:]
+    if (
+        len(arguments) != 2  # noqa: PLR2004 - kind and Make variable origin
+        or arguments[0] not in INVENTORIES
+        or (arguments[0] == "markdown" and not list_only)
+    ):
         sys.stderr.write(
-            "Usage: run-make-check.py {python|shell|test|action} MAKE_VARIABLE_ORIGIN\n",
+            "Usage: run-make-check.py [--list] {python|shell|test|action|markdown} "
+            "MAKE_VARIABLE_ORIGIN\n",
         )
         return 2
     try:
-        run_check(sys.argv[1], sys.argv[2])
+        if list_only:
+            files = selected_files(*arguments)
+            sys.stdout.buffer.write(b"".join(os.fsencode(path) + b"\0" for path in files))
+        else:
+            run_check(*arguments)
     except subprocess.CalledProcessError as exc:
         return exc.returncode if exc.returncode > 0 else 128 - exc.returncode
     except (OSError, ValueError) as exc:

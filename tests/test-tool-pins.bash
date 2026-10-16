@@ -172,6 +172,23 @@ expect_failure "literal CI version" "hard-codes version 1.2.3"
 write_ci_without_lookup
 expect_failure "missing CI lookup" "missing tools.toml lookup for [alpha]"
 
+mkdir -p "${test_root}/scripts/ci"
+cat > "${test_root}/scripts/ci/install-tools.bash" << 'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+version=$(bash scripts/tool-version.sh alpha)
+BASH
+expect_failure "unused CI script cannot supply a missing lookup" "missing tools.toml lookup for [alpha]"
+cat > "${test_root}/.github/workflows/ci.yaml" << 'YAML'
+jobs:
+  check:
+    steps:
+      - run: bash scripts/ci/install-tools.bash
+YAML
+expect_success "referenced CI scripts supply catalog lookups"
+printf 'alpha==1.2.3\n' >> "${test_root}/scripts/ci/install-tools.bash"
+expect_failure "literal version in a referenced CI script" "hard-codes version 1.2.3"
+
 write_ci
 cat > "${test_root}/pre-commit/alpha.yaml" << 'YAML'
 - repo: local

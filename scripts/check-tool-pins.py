@@ -411,6 +411,10 @@ def check_ci(root: Path, pins: list[ToolPin]) -> None:
     ci_path = root / ".github/workflows/ci.yaml"
     try:
         ci = ci_path.read_text(encoding="utf-8")
+        sources = {ci_path: ci}
+        for path in sorted((root / "scripts/ci").glob("*.bash")):
+            if path.relative_to(root).as_posix() in ci:
+                sources[path] = path.read_text(encoding="utf-8")
     except OSError as error:
         raise PinError(f"{ci_path}: {error}") from error
 
@@ -418,10 +422,11 @@ def check_ci(root: Path, pins: list[ToolPin]) -> None:
         if not pin.ci:
             continue
         lookup = f"scripts/tool-version.sh {pin.name}"
-        if lookup not in ci:
+        if not any(lookup in source for source in sources.values()):
             raise PinError(f"{ci_path}: missing tools.toml lookup for [{pin.name}]")
-        if pin.version in ci:
-            raise PinError(f"{ci_path}: hard-codes version {pin.version} for [{pin.name}]")
+        for path, source in sources.items():
+            if pin.version in source:
+                raise PinError(f"{path}: hard-codes version {pin.version} for [{pin.name}]")
 
 
 def _write(message: str, *, error: bool = False) -> None:

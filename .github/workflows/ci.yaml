@@ -39,39 +39,7 @@ jobs:
           python-version: "3.12"
 
       - name: Run focused checks
-        run: |
-          python3 -B scripts/check-tool-pins.py
-
-          python_files=$(git ls-files --cached --others --exclude-standard -- '*.py' | LC_ALL=C sort)
-          if [[ -z "${python_files}" ]]; then
-            echo "No tracked Python files found" >&2
-            exit 1
-          fi
-          python_paths=()
-          while IFS= read -r python_file; do
-            python_paths+=("${python_file}")
-          done <<< "${python_files}"
-          python3 -m py_compile "${python_paths[@]}"
-
-          shell_files=$(git ls-files --cached --others --exclude-standard -- scripts sync tests |
-            awk '/\.(bash|sh)$/' | LC_ALL=C sort)
-          if [[ -z "${shell_files}" ]]; then
-            echo "No tracked shell files found" >&2
-            exit 1
-          fi
-          while IFS= read -r shell_file; do
-            bash -n "${shell_file}"
-          done <<< "${shell_files}"
-
-          test_files=$(git ls-files --cached --others --exclude-standard -- tests |
-            awk '/\/test-.*\.bash$/' | LC_ALL=C sort)
-          if [[ -z "${test_files}" ]]; then
-            echo "No tracked test files found" >&2
-            exit 1
-          fi
-          while IFS= read -r test_file; do
-            bash "${test_file}"
-          done <<< "${test_files}"
+        run: make check
 
   shell-lint:
     name: Shell lint
@@ -91,22 +59,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install shell tools
-        run: |
-          python -m pip install "shellcheck-py==$(bash scripts/tool-version.sh shellcheck)"
-          GOBIN="${RUNNER_TEMP}/bin" \
-            go install "mvdan.cc/sh/v3/cmd/shfmt@v$(bash scripts/tool-version.sh shfmt)"
+        run: bash scripts/ci/install-tools.bash shell
 
       - name: Check shell files
-        run: |
-          shell_file_output=$(git ls-files scripts sync tests |
-            awk '/\.(bash|sh)$/' | LC_ALL=C sort)
-          if [[ -z "${shell_file_output}" ]]; then
-            echo "No tracked shell files found" >&2
-            exit 1
-          fi
-          mapfile -t shell_files <<< "${shell_file_output}"
-          shellcheck "${shell_files[@]}"
-          "${RUNNER_TEMP}/bin/shfmt" -d -i 2 -ci -sr -ln bash "${shell_files[@]}"
+        run: bash scripts/ci/lint-files.bash shell
 
   config-lint:
     name: Config and documentation lint
@@ -120,14 +76,7 @@ jobs:
           persist-credentials: false
 
       - name: Check GitHub Action pins
-        run: |
-          action_file_output=$(git ls-files .github | awk '/\.(yaml|yml)$/' | LC_ALL=C sort)
-          if [[ -z "${action_file_output}" ]]; then
-            echo "No tracked GitHub Action files found" >&2
-            exit 1
-          fi
-          mapfile -t action_files <<< "${action_file_output}"
-          bash scripts/check-github-action-shas.sh "${action_files[@]}"
+        run: make check-github-action-pins
 
       - name: Set up Python
         # https://github.com/actions/setup-python
@@ -142,15 +91,7 @@ jobs:
           node-version: "24"
 
       - name: Install config tools
-        run: |
-          python -m pip install \
-            "prek==$(bash scripts/tool-version.sh prek)" \
-            "ruff==$(bash scripts/tool-version.sh ruff)" \
-            "yamllint==$(bash scripts/tool-version.sh yamllint)"
-          cargo install \
-            taplo-cli \
-            --version "$(bash scripts/tool-version.sh taplo)" \
-            --locked
+        run: bash scripts/ci/install-tools.bash config
 
       - name: Validate pre-commit config
         run: prek validate-config .pre-commit-config.yaml
@@ -159,15 +100,7 @@ jobs:
         run: prek run zizmor --all-files
 
       - name: Check Python
-        run: |
-          python_file_output=$(git ls-files '*.py' | LC_ALL=C sort)
-          if [[ -z "${python_file_output}" ]]; then
-            echo "No tracked Python files found" >&2
-            exit 1
-          fi
-          mapfile -t python_files <<< "${python_file_output}"
-          ruff check "${python_files[@]}"
-          ruff format --check "${python_files[@]}"
+        run: bash scripts/ci/lint-files.bash python
 
       - name: Check YAML
         run: >-
@@ -175,21 +108,7 @@ jobs:
           .github/workflows/ci.yaml .pre-commit-config.yaml config/yamllint.yaml pre-commit/*.yaml
 
       - name: Check Markdown
-        run: |
-          markdown_file_output=$(git ls-files '*.md' | LC_ALL=C sort)
-          if [[ -z "${markdown_file_output}" ]]; then
-            echo "No tracked Markdown files found" >&2
-            exit 1
-          fi
-          mapfile -t markdown_files <<< "${markdown_file_output}"
-          npx --yes "markdownlint-cli2@$(bash scripts/tool-version.sh markdownlint-cli2)" \
-            --config config/markdownlint.jsonc \
-            "${markdown_files[@]}"
-          python3 -B scripts/check-markdown-tables.py "${markdown_files[@]}"
+        run: bash scripts/ci/lint-files.bash markdown
 
       - name: Check TOML
-        run: |
-          taplo format --check --config config/taplo.toml \
-            config/rustfmt.toml config/taplo.toml pyproject.toml sync/manifest.toml tools.toml
-          taplo lint --config config/taplo.toml \
-            config/rustfmt.toml config/taplo.toml pyproject.toml sync/manifest.toml tools.toml
+        run: bash scripts/ci/lint-files.bash toml
