@@ -16,7 +16,7 @@ pre-commit-repository = "https://github.com/pre-commit/pre-commit-hooks"
 pre-commit-revision = "v{version}"
 
 [ruff]
-version = "0.16.10"
+version = "0.17.1"
 ci = true
 releases = "pypi:ruff"
 pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
@@ -93,7 +93,7 @@ version = "0.10.2"
 releases = "crates:cargo-vet"
 
 [uv]
-version = "0.13.0"
+version = "0.13.1"
 releases = "pypi:uv"
 
 [pip-audit]
@@ -109,7 +109,7 @@ version = "1.5.0"
 releases = "github-tags:capnproto/capnproto"
 
 [zizmor]
-version = "1.30.1"
+version = "1.31.1"
 releases = "pypi:zizmor"
 pre-commit-repository = "https://github.com/zizmorcore/zizmor-pre-commit"
 pre-commit-revision = "v{version}"
