@@ -133,12 +133,15 @@ make check-tool-updates
 ```
 
 `make outdated` is an alias. Each `tools.toml` entry names its release source in `releases`, and
-`make check` verifies that the field stays complete.
+`make check` verifies that the field stays complete. Each entry also declares `kind = "python"` or
+`kind = "tool"` to select its cooldown independently of the release source.
 
-The report lists each pin with its latest release, the release's UTC timestamp, and its age.
+The report lists each pin with its kind, latest release, release UTC timestamp, and age.
 
-**Cooldown**: The default is 3 days. To change it, set `COOLDOWN_DAYS`. When the latest release is still
-within the cooldown, subsequent rows list each newer release between the pin and the latest release.
+**Cooldown**: Python packages appear as `python` and use 7 days. Other tools appear as `tool` and
+use 3 days. Native tools such as prek, ruff, and uv remain tools even when distributed through PyPI.
+To override both defaults, set `COOLDOWN_DAYS`. When the latest release is still within its cooldown,
+subsequent rows list each newer release between the pin and the latest release.
 
 In a terminal, release colors show age:
 

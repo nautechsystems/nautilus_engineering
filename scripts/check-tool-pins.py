@@ -42,6 +42,7 @@ SECURITY_TOOLS = frozenset(
 TOOL_FIELDS = frozenset(
     {
         "ci",
+        "kind",
         "pre-commit-dependency",
         "pre-commit-fragment",
         "pre-commit-hooks",
@@ -90,6 +91,8 @@ def read_catalog(path: Path) -> list[ToolPin]:  # noqa: C901, PLR0912, PLR0915
         if unknown:
             raise PinError(f"{path}: [{name}] has unknown field(s): {', '.join(unknown)}")
 
+        if values.get("kind") not in ("python", "tool"):
+            raise PinError(f"{path}: [{name}].kind must be python or tool")
         version = values.get("version")
         ci = values.get("ci", False)
         releases = values.get("releases")

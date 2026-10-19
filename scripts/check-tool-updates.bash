@@ -12,7 +12,8 @@
 #
 # Run on demand or through `make outdated`. This is a read-only report; it does
 # not change tools.toml. For each differing pin, the summary names the newest
-# upstream release past the COOLDOWN_DAYS adoption cooldown (default 3 days)
+# upstream release past its adoption cooldown (7 days for Python packages,
+# 3 days for other tools; COOLDOWN_DAYS overrides both defaults)
 # as that pin's upgrade target; a target can be older than the latest release
 # when the latest release is still within the cooldown. When that latest
 # release is still within the cooldown, the table lists every newer release
@@ -33,9 +34,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TOOLS_TOML="${REPO_ROOT}/tools.toml"
 CURL_MAX_TIME="${CURL_MAX_TIME:-30}"
-COOLDOWN_DAYS="${COOLDOWN_DAYS:-3}"
+COOLDOWN_DAYS="${COOLDOWN_DAYS:-}"
+COOLDOWN_DAYS_PYTHON="${COOLDOWN_DAYS:-7}"
+COOLDOWN_DAYS_TOOLS="${COOLDOWN_DAYS:-3}"
 
-if ! [[ "$COOLDOWN_DAYS" =~ ^[0-9]+$ ]]; then
+if [[ -n "$COOLDOWN_DAYS" ]] && ! [[ "$COOLDOWN_DAYS" =~ ^[0-9]+$ ]]; then
   echo "Error: COOLDOWN_DAYS must be a non-negative integer: $COOLDOWN_DAYS" >&2
   exit 2
 fi
@@ -71,12 +74,13 @@ if [[ ! -f "$TOOLS_TOML" ]]; then
 fi
 
 entries=$(awk '
-  function emit() { if (name != "") printf "%s %s %s\n", name, version, releases }
+  function emit() { if (name != "") printf "%s|%s|%s|%s\n", name, version, releases, kind }
   /^\[[A-Za-z0-9._-]+\]$/ {
     emit()
     name = substr($0, 2, length($0) - 2)
     version = ""
     releases = ""
+    kind = ""
   }
   name != "" && /^version[[:space:]]*=/ {
     value = $0
@@ -89,6 +93,12 @@ entries=$(awk '
     gsub(/.*=[[:space:]]*"/, "", value)
     gsub(/".*/, "", value)
     releases = value
+  }
+  name != "" && /^kind[[:space:]]*=/ {
+    value = $0
+    gsub(/.*=[[:space:]]*"/, "", value)
+    gsub(/".*/, "", value)
+    kind = value
   }
   END { emit() }
 ' "$TOOLS_TOML")
@@ -388,7 +398,7 @@ format_age() {
 }
 
 print_release_row() {
-  local name=$1 pinned=$2 latest=$3 published=$4 flag=$5
+  local name=$1 kind=$2 pinned=$3 latest=$4 published=$5 flag=$6
   local released age age_days age_color="" age_reset=""
   age=$(format_age "$published" "$now") || return 1
   released=${published%%.*}
@@ -402,22 +412,23 @@ print_release_row() {
   fi
   if ((age_days == 0)); then
     age_color=$color_red
-  elif ((age_days >= 0 && age_days < COOLDOWN_DAYS)); then
+  elif ((age_days >= 0 && age_days < cooldown_days)); then
     age_color=$color_orange
   fi
   if [[ -n "$age_color" ]]; then
     age_reset=$color_reset
   fi
-  printf '%-20s %-12s %-12s %-20s ' "$name" "$pinned" "$latest" "$released"
+  printf '%-20s %-14s %-12s %-12s %-20s ' "$name" "$kind" "$pinned" "$latest" "$released"
   printf '%s%s%s%s\n' "$age_color" "$age" "$age_reset" "$flag"
 }
 
 count=$(printf '%s\n' "$entries" | wc -l | tr -d '[:space:]')
 echo "Checking ${count} cataloged tool pin(s) against upstream releases"
+printf 'Cooldowns: Python packages %s days; tools %s days\n' "$COOLDOWN_DAYS_PYTHON" "$COOLDOWN_DAYS_TOOLS"
 echo
 
-printf '%-20s %-12s %-12s %-20s %s\n' "tool" "pinned" "latest" "released (UTC)" "age"
-printf -- '-%.0s' {1..84}
+printf '%-20s %-14s %-12s %-12s %-20s %s\n' "name" "kind" "pinned" "latest" "released (UTC)" "age"
+printf -- '-%.0s' {1..99}
 printf '\n'
 
 catalog_lines=()
@@ -434,23 +445,36 @@ if [[ -t 1 && -z "${NO_COLOR+x}" ]]; then
   color_reset=$(printf '\033[0m')
 fi
 now=$(jq -nr 'now | floor')
-cutoff_epoch=$((now - COOLDOWN_DAYS * 86400))
 tab=$(printf '\t')
 
-while IFS=' ' read -r name version source; do
+while IFS='|' read -r name version source kind; do
   [[ -z "$name" ]] && continue
+  case "$kind" in
+    python)
+      cooldown_days=$COOLDOWN_DAYS_PYTHON
+      ;;
+    tool)
+      cooldown_days=$COOLDOWN_DAYS_TOOLS
+      ;;
+    *)
+      printf '%-20s %-14s %-12s INVALID CATALOG ENTRY\n' "$name" "$kind" "$version"
+      catalog_lines+=("${name}: kind must be python or tool")
+      continue
+      ;;
+  esac
+  cutoff_epoch=$((now - cooldown_days * 86400))
   if [[ -z "$version" || -z "$source" ]]; then
-    printf '%-20s %-12s INVALID CATALOG ENTRY\n' "$name" "$version"
+    printf '%-20s %-14s %-12s INVALID CATALOG ENTRY\n' "$name" "$kind" "$version"
     catalog_lines+=("${name}: missing version or releases field")
     continue
   fi
   if ! [[ "$source" =~ $RELEASE_SOURCE_PATTERN ]]; then
-    printf '%-20s %-12s INVALID RELEASE SOURCE\n' "$name" "$version"
+    printf '%-20s %-14s %-12s INVALID RELEASE SOURCE\n' "$name" "$kind" "$version"
     catalog_lines+=("${name}: unsupported release source ${source}")
     continue
   fi
   if ! release=$(release_info "$source" "$version" "$cutoff_epoch"); then
-    printf '%-20s %-12s LOOKUP FAILED\n' "$name" "$version"
+    printf '%-20s %-14s %-12s LOOKUP FAILED\n' "$name" "$kind" "$version"
     lookup_lines+=("${name}: no release found at ${source}")
     continue
   fi
@@ -460,7 +484,7 @@ while IFS=' ' read -r name version source; do
   adoptable=${release_fields[2]:-}
   target_failed=${release_fields[3]:-}
   if [[ -z "$latest" || -z "$published" ]] || ! age=$(format_age "$published" "$now"); then
-    printf '%-20s %-12s LOOKUP FAILED\n' "$name" "$version"
+    printf '%-20s %-14s %-12s LOOKUP FAILED\n' "$name" "$kind" "$version"
     lookup_lines+=("${name}: no release time found at ${source}")
     continue
   fi
@@ -473,7 +497,7 @@ while IFS=' ' read -r name version source; do
   else
     age_days=${age%%d*}
   fi
-  if [[ "$age" == "future" ]] || ((age_days < COOLDOWN_DAYS)); then
+  if [[ "$age" == "future" ]] || ((age_days < cooldown_days)); then
     latest_fresh=1
   fi
   flag=""
@@ -500,7 +524,7 @@ while IFS=' ' read -r name version source; do
       mismatch_lines+=("${name} ${version} (latest ${latest} is not newer)")
     fi
   fi
-  print_release_row "$name" "$version" "$latest" "$published" "$flag"
+  print_release_row "$name" "$kind" "$version" "$latest" "$published" "$flag"
   if [[ -n "$latest_fresh" ]]; then
     i=4
     while ((i < ${#release_fields[@]})); do
@@ -508,7 +532,7 @@ while IFS=' ' read -r name version source; do
       newer_published=${release_fields[i + 1]:-}
       i=$((i + 2))
       [[ -n "$newer" && -n "$newer_published" ]] || continue
-      print_release_row "" "" "$newer" "$newer_published" "" || true
+      print_release_row "" "" "" "$newer" "$newer_published" "" || true
     done
   fi
 done <<< "$entries"
@@ -521,7 +545,7 @@ if ((${#catalog_lines[@]} > 0)); then
   for line in "${catalog_lines[@]}"; do
     echo "  - ${line}"
   done
-  echo "  Fix tools.toml; make check validates every releases field."
+  echo "  Fix tools.toml; make check validates catalog kinds and release sources."
   exit_code=1
 fi
 
@@ -537,7 +561,7 @@ fi
 
 if ((${#upgradeable_lines[@]} > 0)); then
   echo
-  echo "Upgradable pins (${#upgradeable_lines[@]}): newest release past the ${COOLDOWN_DAYS}-day cooldown"
+  echo "Upgradable pins (${#upgradeable_lines[@]}): newest release past its cooldown"
   for line in "${upgradeable_lines[@]}"; do
     echo "  - ${line}"
   done
@@ -557,7 +581,7 @@ fi
 
 if ((${#hold_lines[@]} > 0)); then
   echo
-  echo "Cooldown holds (${#hold_lines[@]}): every newer release is within the ${COOLDOWN_DAYS}-day cooldown"
+  echo "Cooldown holds (${#hold_lines[@]}): every newer release is within its cooldown"
   for line in "${hold_lines[@]}"; do
     echo "  - ${line}"
   done

@@ -15,6 +15,7 @@ write_catalog() {
 
   cat > "${test_root}/tools.toml" << TOML
 [alpha]
+kind = "tool"
 version = "1.2.3"
 ci = true
 releases = "pypi:alpha"
@@ -23,16 +24,19 @@ pre-commit-revision = "v{version}"
 pre-commit-fragment = "pre-commit/alpha.yaml"
 
 [cargo-audit]
+kind = "tool"
 version = "${cargo_audit_version}"
 releases = "crates:cargo-audit"
 
 [beta]
+kind = "tool"
 version = "2.0.0"
 releases = "github:example/beta"
 pre-commit-repository = "https://example.com/beta"
 pre-commit-revision = "release-{version}"
 
 [gamma]
+kind = "tool"
 version = "3.0.0"
 releases = "npm:gamma"
 pre-commit-dependency = "cli:gamma:{version}"
@@ -147,6 +151,20 @@ write_ci
 write_catalog 0.22.2
 expect_success "matching catalog, hooks, fragments, and CI"
 
+sed 's/kind = "tool"/kind = "python"/' "${test_root}/tools.toml" > "${test_root}/tools.toml.tmp"
+mv "${test_root}/tools.toml.tmp" "${test_root}/tools.toml"
+expect_success "Python package kinds are accepted"
+for invalid_kind in missing invalid; do
+  write_catalog 0.22.2
+  if [[ "$invalid_kind" == missing ]]; then
+    sed '/^kind = /d' "${test_root}/tools.toml" > "${test_root}/tools.toml.tmp"
+  else
+    sed 's/kind = "tool"/kind = "native"/' "${test_root}/tools.toml" > "${test_root}/tools.toml.tmp"
+  fi
+  mv "${test_root}/tools.toml.tmp" "${test_root}/tools.toml"
+  expect_failure "$invalid_kind catalog kind" "[alpha].kind must be python or tool"
+done
+
 for version in 0.22.2-alpha 0.22.2-beta.1 0.22.2-rc.1 0.22.2+local 0.22.2.1; do
   write_catalog "$version"
   expect_failure "unstable security tool pin $version" \
@@ -213,6 +231,7 @@ write_catalog 0.22.2
 cat >> "${test_root}/tools.toml" << 'TOML'
 
 [delta]
+kind = "tool"
 version = "1.0.0"
 TOML
 expect_failure "missing release source" "[delta].releases must be"
@@ -222,6 +241,7 @@ for source in svn:delta github:delta crates:owner/delta "pypi:delta name"; do
   cat >> "${test_root}/tools.toml" << TOML
 
 [delta]
+kind = "tool"
 version = "1.0.0"
 releases = "${source}"
 TOML
