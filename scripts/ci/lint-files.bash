@@ -22,7 +22,10 @@ fi
 
 case "$1" in
   shell)
-    : "${RUNNER_TEMP:?RUNNER_TEMP is required for the shfmt executable}"
+    if [[ -z "${RUNNER_TEMP:-}" ]]; then
+      echo 'RUNNER_TEMP is required for the shfmt executable' >&2
+      exit 1
+    fi
     shellcheck "${files[@]}"
     "${RUNNER_TEMP}/bin/shfmt" -d -i 2 -ci -sr -ln bash "${files[@]}"
     ;;
