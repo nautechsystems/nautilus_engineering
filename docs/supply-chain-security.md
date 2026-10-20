@@ -103,6 +103,9 @@ The runner exports the frozen uv resolution without local project, workspace, or
 the exact central `pip-audit` version in an isolated uv environment. It enables hash checking and disables pip
 resolution. Thus, the audit covers the locked third-party dependency set.
 
+The Python audit uses a 30-second socket timeout and retries PyPI connection timeouts up to three times
+without delay. Vulnerability findings and other errors fail immediately.
+
 ### Node
 
 Each `[[node]]` entry requires `project`. `production = true` gates on `npm audit --omit=dev`.

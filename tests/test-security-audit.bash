@@ -328,6 +328,64 @@ else
   failures=$((failures + 1))
 fi
 
+python3 - "${fixture}/scripts/security-audit.py" "$fixture" << 'PYTHON_AUDIT_RETRIES'
+import importlib.util
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+from pathlib import Path
+import subprocess
+import sys
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("security_audit", sys.argv[1])
+audit_runner = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = audit_runner
+spec.loader.exec_module(audit_runner)
+context = audit_runner.Context(
+    root=Path(sys.argv[2]),
+    versions={"pip-audit": "2.10.1"},
+    executables={"uv": "fake-uv"},
+)
+audit = audit_runner.PythonAudit(Path("python"), "3.12", True, True, (), ())
+connection_error = "ERROR:pip_audit._cli:Could not connect to PyPI's vulnerability feed"
+connection = (1, "", connection_error)
+success = (0, "No known vulnerabilities found", "")
+finding = (1, "Found a known vulnerability", "")
+cases = [
+    ("success", [success], 1, False),
+    ("connection recovery", [connection] * 3 + [success], 4, False),
+    ("connection exhaustion", [connection] * 4, 4, True),
+    ("vulnerability finding", [finding], 1, True),
+    ("finding after connection recovery", [connection, finding], 2, True),
+    ("unrelated failure", [(2, connection_error, "invalid arguments")], 1, True),
+]
+for label, results, expected_calls, expected_failure in cases:
+    responses = iter(results)
+    commands = []
+
+    def run_command(args, **kwargs):
+        if args[1] == "export":
+            return subprocess.CompletedProcess(args, 0, "package==1.0\n", "")
+        commands.append(args)
+        assert args[args.index("--timeout") + 1] == "30", args
+        status, stdout, stderr = next(responses)
+        return subprocess.CompletedProcess(args, status, stdout, stderr)
+
+    failed = False
+    with (
+        patch.object(audit_runner.subprocess, "run", side_effect=run_command),
+        redirect_stdout(StringIO()),
+        redirect_stderr(StringIO()),
+    ):
+        try:
+            audit_runner._run_python_audit(context, audit)
+        except audit_runner.AuditError:
+            failed = True
+    assert failed == expected_failure, (label, failed)
+    assert len(commands) == expected_calls, (label, commands)
+    print(f"ok   Python audit {label} uses the required timeout and retry limit")
+PYTHON_AUDIT_RETRIES
+
 : > "$command_log"
 status=0
 output=$(FAKE_CARGO_AUDIT_FAIL=1 run_audit run 2>&1) || status=$?
