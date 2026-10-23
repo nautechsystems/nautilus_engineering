@@ -6,7 +6,7 @@
 
 [prek]
 kind = "tool"
-version = "0.5.6"
+version = "0.5.7"
 ci = true
 releases = "pypi:prek"
 
