@@ -328,6 +328,106 @@ else
   failures=$((failures + 1))
 fi
 
+python3 - "${fixture}/scripts/security-audit.py" "$fixture" << 'PYTHON_SHARED_VET'
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tomllib
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("security_audit", sys.argv[1])
+runner = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = runner
+spec.loader.exec_module(runner)
+root = Path(sys.argv[2])
+store = root / "supply-chain"
+original = '''[cargo-vet]
+version = "0.10"
+[policy.present]
+audit-as-crates-io = false
+[policy.present.dependency-criteria]
+dependency = "safe-to-run"
+[policy."absent.crate"]
+audit-as-crates-io = false
+[[exemptions.dependency]]
+version = "1.2.3"
+criteria = "safe-to-deploy"
+'''
+(store / "config.toml").write_text(original, encoding="utf-8")
+(store / "audits.toml").write_text("# existing audits\n", encoding="utf-8")
+(store / "imports.lock").write_text("# existing imports\n", encoding="utf-8")
+baseline = {p.name: p.read_bytes() for p in store.iterdir()}
+context = runner.Context(root, {}, {"cargo": "fake-cargo"})
+borrowed = runner.CargoVet(Path("fuzz/Cargo.toml"), Path("supply-chain"))
+scoped_paths = []
+
+def metadata(args, **kwargs):
+    assert args == [
+        "fake-cargo", "metadata", "--manifest-path", "fuzz/Cargo.toml",
+        "--all-features", "--locked", "--format-version", "1",
+    ], args
+    assert kwargs == {"root": root}, kwargs
+    return subprocess.CompletedProcess(args, 0, json.dumps({"packages": [{"name": "present"}]}), "")
+
+def vet(context_arg, label, args):
+    assert context_arg == context
+    assert label == "cargo vet fuzz/Cargo.toml"
+    assert args[:4] == ["fake-cargo", "vet", "--manifest-path", "fuzz/Cargo.toml"], args
+    assert args[-1] == "--locked", args
+    scoped = Path(args[args.index("--store-path") + 1])
+    assert scoped != store
+    scoped_paths.append(scoped)
+    expected = tomllib.loads(original)
+    del expected["policy"]["absent.crate"]
+    assert tomllib.loads((scoped / "config.toml").read_text()) == expected
+    assert (scoped / "audits.toml").read_bytes() == baseline["audits.toml"]
+    assert (scoped / "imports.lock").read_bytes() == baseline["imports.lock"]
+
+with patch.object(runner, "_run_process", side_effect=metadata), patch.object(runner, "_run_step", side_effect=vet):
+    runner._run_cargo_vet(context, borrowed)
+assert len(scoped_paths) == 1 and not scoped_paths[0].exists()
+assert {p.name: p.read_bytes() for p in store.iterdir()} == baseline
+print("ok   borrowed vet store scopes absent policies without changing audit requirements or source files")
+
+def failed_vet(*args):
+    vet(*args)
+    raise runner.AuditError("vetting failed")
+
+with patch.object(runner, "_run_process", side_effect=metadata), patch.object(runner, "_run_step", side_effect=failed_vet):
+    try:
+        runner._run_cargo_vet(context, borrowed)
+    except runner.AuditError as error:
+        assert str(error) == "vetting failed", error
+    else:
+        raise AssertionError("failed vetting must remain a failure")
+assert len(scoped_paths) == 2 and not scoped_paths[1].exists()
+assert {p.name: p.read_bytes() for p in store.iterdir()} == baseline
+print("ok   failed borrowed-store vetting propagates and removes the temporary copy")
+
+failure = subprocess.CompletedProcess([], 17, "", "metadata failed")
+with patch.object(runner, "_run_process", return_value=failure), patch.object(runner, "_run_step") as check:
+    try:
+        runner._run_cargo_vet(context, borrowed)
+    except runner.AuditError as error:
+        assert "metadata failed" in str(error), error
+    else:
+        raise AssertionError("failed metadata must prevent vetting")
+    check.assert_not_called()
+print("ok   failed metadata prevents borrowed-store vetting")
+
+own = runner.CargoVet(Path("Cargo.toml"), Path("supply-chain"))
+with patch.object(runner, "_run_process") as probe, patch.object(runner, "_run_step") as check:
+    runner._run_cargo_vet(context, own)
+    probe.assert_not_called()
+    check.assert_called_once_with(context, "cargo vet Cargo.toml", [
+        "fake-cargo", "vet", "--manifest-path", "Cargo.toml",
+        "--store-path", "supply-chain", "--locked",
+    ])
+print("ok   an owned vet store retains the native policy validation")
+PYTHON_SHARED_VET
+
 python3 - "${fixture}/scripts/security-audit.py" "$fixture" << 'PYTHON_AUDIT_RETRIES'
 import importlib.util
 from contextlib import redirect_stderr, redirect_stdout
