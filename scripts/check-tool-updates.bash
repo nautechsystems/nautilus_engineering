@@ -37,6 +37,7 @@ CURL_MAX_TIME="${CURL_MAX_TIME:-30}"
 COOLDOWN_DAYS="${COOLDOWN_DAYS:-}"
 COOLDOWN_DAYS_PYTHON="${COOLDOWN_DAYS:-7}"
 COOLDOWN_DAYS_TOOLS="${COOLDOWN_DAYS:-3}"
+FLAG_UPGRADEABLE="  ** UPGRADEABLE"
 
 if [[ -n "$COOLDOWN_DAYS" ]] && ! [[ "$COOLDOWN_DAYS" =~ ^[0-9]+$ ]]; then
   echo "Error: COOLDOWN_DAYS must be a non-negative integer: $COOLDOWN_DAYS" >&2
@@ -410,7 +411,9 @@ print_release_row() {
   else
     age_days=${age%%d*}
   fi
-  if ((age_days == 0)); then
+  if [[ "$flag" == "$FLAG_UPGRADEABLE" ]]; then
+    age_color=$color_green
+  elif ((age_days == 0)); then
     age_color=$color_red
   elif ((age_days >= 0 && age_days < cooldown_days)); then
     age_color=$color_orange
@@ -419,7 +422,7 @@ print_release_row() {
     age_reset=$color_reset
   fi
   printf '%-20s %-14s %-12s %-12s %-20s ' "$name" "$kind" "$pinned" "$latest" "$released"
-  printf '%s%s%s%s\n' "$age_color" "$age" "$age_reset" "$flag"
+  printf '%s%s%s%s\n' "$age_color" "$age" "$flag" "$age_reset"
 }
 
 count=$(printf '%s\n' "$entries" | wc -l | tr -d '[:space:]')
@@ -438,10 +441,12 @@ hold_lines=()
 mismatch_lines=()
 color_red=""
 color_orange=""
+color_green=""
 color_reset=""
 if [[ -t 1 && -z "${NO_COLOR+x}" ]]; then
   color_red=$(printf '\033[0;31m')
   color_orange=$(printf '\033[38;5;208m')
+  color_green=$(printf '\033[0;32m')
   color_reset=$(printf '\033[0m')
 fi
 now=$(jq -nr 'now | floor')
@@ -508,6 +513,9 @@ while IFS='|' read -r name version source kind; do
       flag="  ** OUTDATED"
     fi
     if [[ -n "$adoptable" ]] && version_newer "$adoptable" "$version"; then
+      if [[ -z "$latest_fresh" ]] && version_newer "$latest" "$version"; then
+        flag=$FLAG_UPGRADEABLE
+      fi
       summary_line="${name} ${version} -> ${adoptable}"
       if [[ "$adoptable" != "$latest" ]]; then
         if [[ -n "$latest_fresh" ]]; then
@@ -532,7 +540,12 @@ while IFS='|' read -r name version source kind; do
       newer_published=${release_fields[i + 1]:-}
       i=$((i + 2))
       [[ -n "$newer" && -n "$newer_published" ]] || continue
-      print_release_row "" "" "" "$newer" "$newer_published" "" || true
+      newer_epoch=$(timestamp_epoch "$newer_published") || continue
+      flag=""
+      if ((newer_epoch <= cutoff_epoch)); then
+        flag=$FLAG_UPGRADEABLE
+      fi
+      print_release_row "" "" "" "$newer" "$newer_published" "$flag" || true
     done
   fi
 done <<< "$entries"

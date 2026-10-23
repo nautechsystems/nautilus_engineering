@@ -283,6 +283,8 @@ expect_report "all pins current across every release source" 0 \
   "5d 12h" \
   "All 5 tool pin(s) match their latest upstream releases"
 expect_absent "current report has no outdated flag" "** OUTDATED"
+expect_absent "current pins have no upgradeable flag" "** UPGRADEABLE"
+expect_absent "redirected report has no ANSI colors" $'\033['
 
 write_fixture 1.3.0 "$recent_release" "1.2.3 $older_release"
 expect_report "differing pin with no newer release past the cooldown is a hold" 0 \
@@ -314,12 +316,13 @@ else
   failures=$((failures + 1))
 fi
 
-write_fixture 1.3.0 "$recent_release" "1.2.11 $older_release 1.2.10 $older_release"
+write_fixture 1.3.0 "$recent_release" "1.2.12 $recent_release 1.2.11 $older_release 1.2.10 $older_release"
 expect_report "newest past-cooldown release is the upgrade target" 1 \
   "alpha                tool           1.2.3        1.3.0" \
   "1d 12h  ** RECENT" \
   $'\n                                                 1.2.11' \
   $'\n                                                 1.2.10' \
+  "5d 12h  ** UPGRADEABLE" \
   $'\n\nUpgradable pins (1): newest release past its cooldown' \
   "alpha 1.2.3 -> 1.2.11 (latest 1.3.0 within cooldown)"
 expect_absent "target report has no hold section" "Cooldown holds"
@@ -330,6 +333,48 @@ else
   failures=$((failures + 1))
 fi
 
+release_statuses=$(printf '%s\n' "$output" | awk '$1 ~ /^1\.2\.(12|11|10)$/ { print $1, $NF }')
+if [[ "$release_statuses" == $'1.2.12 12h\n1.2.11 UPGRADEABLE\n1.2.10 UPGRADEABLE' ]]; then
+  printf 'ok   %s\n' "each intermediate release is labeled only after its cooldown"
+else
+  printf 'FAIL %s\n%s\n' "intermediate release statuses" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+green=$(printf '\033[0;32m')
+reset=$(printf '\033[0m')
+for color_mode in enabled disabled; do
+  output=$(
+    PATH="${fake_bin}:$PATH" python3 - "${test_root}/scripts/check-tool-updates.bash" "$color_mode" << 'PY_UPGRADE'
+import os
+import pty
+import sys
+
+if sys.argv[2] == "disabled":
+    os.environ["NO_COLOR"] = ""
+else:
+    os.environ.pop("NO_COLOR", None)
+pty.spawn(["bash", sys.argv[1]])
+PY_UPGRADE
+  )
+  if [[ "$color_mode" == enabled ]]; then
+    if [[ "$output" == *"${green}  5d 12h  ** UPGRADEABLE${reset}"* ]]; then
+      printf 'ok   %s\n' "eligible intermediate releases have green age and status"
+    else
+      printf 'FAIL %s\n%s\n' "eligible intermediate release colors" "$output" >&2
+      failures=$((failures + 1))
+    fi
+  else
+    expect_absent "NO_COLOR disables terminal colors" $'\033['
+    if [[ "$output" == *"5d 12h  ** UPGRADEABLE"* ]]; then
+      printf 'ok   %s\n' "NO_COLOR preserves upgradeable labels"
+    else
+      printf 'FAIL %s\n%s\n' "NO_COLOR upgradeable labels" "$output" >&2
+      failures=$((failures + 1))
+    fi
+  fi
+done
+
 write_fixture 1.3.0 "$recent_release" "1.2.11 $recent_release 1.2.9 $recent_release 1.2.3 $older_release"
 expect_report "hold lists every newer release between pin and latest" 0 \
   "alpha                tool           1.2.3        1.3.0" \
@@ -337,6 +382,7 @@ expect_report "hold lists every newer release between pin and latest" 0 \
   $'\n                                                 1.2.9' \
   "alpha 1.2.3 -> 1.3.0 (1d 12h within cooldown)"
 expect_absent "hold between rows omit the tool name" $'\nalpha                tool           1.2.3        1.2.11'
+expect_absent "recent intermediate releases are not upgradeable" "** UPGRADEABLE"
 
 write_fixture
 sed "s|^pypi beta 2.0.0 .*|pypi beta 2.1.0 ${recent_release} 2.0.9 ${older_release} 2.0.5 ${mature_release}|" \
@@ -380,8 +426,8 @@ pty.spawn(["bash", sys.argv[1]])
 PY_COLOR
 )
 if [[ "$output" == *"${orange}  5d 12h"* &&
-  "$output" == *"5d 12h  ** OUTDATED"* ]]; then
-  printf 'ok   %s\n' "Python package at five days is orange while native tool is outdated"
+  "$output" == *"${green}  5d 12h  ** UPGRADEABLE${reset}"* ]]; then
+  printf 'ok   %s\n' "Python package at five days is orange while native tool is upgradeable"
 else
   printf 'FAIL %s\n%s\n' "per-kind terminal colors" "$output" >&2
   failures=$((failures + 1))
@@ -417,10 +463,12 @@ TOML
       expect_report "$boundary_kind holds one second before $boundary_days days" 0 \
         "Cooldown holds (1): every newer release is within its cooldown"
       expect_absent "boundary hold has no upgrade" "Upgradable pins"
+      expect_absent "boundary hold has no upgradeable flag" "** UPGRADEABLE"
     else
       expect_report "$boundary_kind allows a release at exactly $boundary_days days" 1 \
         "Upgradable pins (1): newest release past its cooldown" \
-        "beta 2.0.0 -> 2.1.0"
+        "beta 2.0.0 -> 2.1.0" \
+        "${boundary_days}d  0h  ** UPGRADEABLE"
       expect_absent "eligible boundary has no hold" "Cooldown holds"
     fi
   done
@@ -435,6 +483,16 @@ expect_report "npm history yields the upgrade target" 1 \
   "gamma                tool           0.11.0.1     0.12.0" \
   $'\n                                                 0.11.5' \
   "gamma 0.11.0.1 -> 0.11.5 (latest 0.12.0 within cooldown)"
+
+write_fixture
+sed "s|^npm gamma 0.11.0.1 .*|npm gamma 0.12.0 ${older_release} 0.13.0 ${older_release}|" \
+  "$fixture" > "${fixture}.tmp"
+mv "${fixture}.tmp" "$fixture"
+expect_report "eligible npm latest is labeled when a higher upgrade target exists" 1 \
+  "gamma                tool           0.11.0.1     0.12.0" \
+  "5d 12h  ** UPGRADEABLE" \
+  "gamma 0.11.0.1 -> 0.13.0 (latest 0.12.0)"
+expect_absent "eligible npm latest is not outdated" "** OUTDATED"
 
 write_fixture
 sed "s|^github example/delta 3.1.0 .*|github example/delta 3.3.0 ${recent_release} 3.2.0 ${older_release}|" \
@@ -490,6 +548,7 @@ expect_report "pin ahead of upstream is a mismatch" 1 \
   "Pin mismatches (1): latest upstream release is not newer than the pin" \
   "alpha 1.2.3 (latest 1.1.0 is not newer)"
 expect_absent "mismatch is not a cooldown hold" "Cooldown holds"
+expect_absent "mismatched pin is not upgradeable" "** UPGRADEABLE"
 
 write_fixture
 sed "s|^pypi beta 2.0.0 .*|pypi beta 2.0.0rc1 ${mature_release} 2.0.5 ${mature_release}|" \
@@ -514,13 +573,15 @@ expect_absent "non-numeric pin lists no intervening row" $'\n                   
 
 write_catalog
 write_fixture
-sed "s|^github-tags example/epsilon 0.10.0 .*|github-tags example/epsilon 0.11.0 ${recent_release} 0.10.0 ${older_release}|" \
+sed "s|^github-tags example/epsilon 0.10.0 .*|github-tags example/epsilon 0.11.0 ${recent_release} 0.10.3 ${older_release} 0.10.0 ${older_release}|" \
   "$fixture" > "${fixture}.tmp"
 mv "${fixture}.tmp" "$fixture"
 cat > "$tags_fixture" << 'FIXTURE'
 example/epsilon v0.9.0
 example/epsilon v0.10.0
 example/epsilon v0.10.0^{}
+example/epsilon v0.10.3
+example/epsilon v0.10.3^{}
 example/epsilon v0.10.5
 example/epsilon v0.10.5^{}
 example/epsilon v0.11.0
@@ -528,8 +589,11 @@ example/epsilon v0.11.0^{}
 FIXTURE
 expect_report "failed tag date fails the target lookup" 1 \
   "epsilon              tool           0.10.0       0.11.0" \
+  $'\n                                                 0.10.3' \
+  "5d 12h  ** UPGRADEABLE" \
   "FAIL: failed release lookups (1)" \
   "epsilon: upgrade-target lookup failed at github-tags:example/epsilon"
+expect_absent "failed tag lookup does not claim an upgrade target" "Upgradable pins"
 expect_absent "failed tag lookup does not claim a cooldown hold" \
   "epsilon 0.10.0 -> 0.11.0 (1d 12h within cooldown)"
 
@@ -555,7 +619,7 @@ fi
 
 write_fixture 1.3.0 "$older_release"
 expect_report "differing pin past the cooldown can be upgraded" 1 \
-  "5d 12h  ** OUTDATED" \
+  "5d 12h  ** UPGRADEABLE" \
   "Upgradable pins (1): newest release past its cooldown" \
   "alpha 1.2.3 -> 1.3.0"
 expect_absent "upgradeable report has no recent flag" "** RECENT"

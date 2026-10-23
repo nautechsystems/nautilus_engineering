@@ -6,7 +6,7 @@
 
 [prek]
 kind = "tool"
-version = "0.5.5"
+version = "0.5.6"
 ci = true
 releases = "pypi:prek"
 
@@ -109,7 +109,7 @@ releases = "crates:cargo-vet"
 
 [uv]
 kind = "tool"
-version = "0.13.1"
+version = "0.13.4"
 releases = "pypi:uv"
 
 [pip-audit]
