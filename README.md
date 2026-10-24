@@ -83,10 +83,12 @@ Run the complete local CI-readiness gate:
 make pre-flight
 ```
 
-`make pre-flight` aliases `make pre-commit`. It runs each formatter, linter, and repository check, including
-private-key detection, GitHub Action pin validation, and `make check`.
+`make pre-flight` checks all GitHub Action pins and release cooldowns before running `make pre-commit`.
+`make pre-commit` runs each formatter, linter, and repository check, including private-key detection,
+GitHub Action checks, and `make check`.
 
-The Makefile runs the exact cataloged prek release through uv. Install the hooks with `prek install`.
+The Makefile runs the exact cataloged prek release through uv.
+Install the pre-commit and pre-push hooks with `prek install`.
 
 To run only the syntax checks, tool-pin validation, and repository tests, use:
 
@@ -102,6 +104,15 @@ use `make test TEST_FILES=tests/test-sync.bash`. Use `ACTION_FILES` with `make c
 Selections are shell-word lists: quote filenames containing spaces inside the value. Empty or malformed
 explicit lists fail. The runner parses values without a shell after Make expands its own variable references
 and functions.
+
+`scripts/check-github-actions.sh` requires Bash, Git, curl, and jq. It checks source comments, full
+commit SHAs, and matching release tags. The matching GitHub release's `published_at` timestamp must be
+at least 14 complete days old. Missing or invalid publication metadata and failed lookups fail the check;
+tag and commit dates do not substitute for a release publication date.
+
+CI and pre-push check all workflows and composite actions. The commit hook checks changed workflow and
+composite Action files. Set `GITHUB_TOKEN` to authenticate release lookups. Public lookups also work
+without a token, subject to GitHub's unauthenticated rate limit.
 
 This repository has no dependency graph to audit. Its tests use controlled fixtures for the shared
 supply-chain runner, installer, exact version checks, policy validation, and secondary dependency paths.
@@ -171,7 +182,8 @@ repository does not validate Windows development.
 - Linux and macOS run the functional checks, repository tests, and tool catalog validation against its
   pre-commit and workflow consumers.
 - Linux also runs the shell, Python, YAML, Markdown, and TOML linters. It checks each GitHub Action reference
-  for a source comment and a full commit SHA that matches its named release tag.
+  for a source comment, a full commit SHA that matches its named release tag, and a release published at least
+  14 complete days ago.
 
 ## License
 

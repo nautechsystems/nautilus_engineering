@@ -77,7 +77,7 @@ def run_check(kind: str, origin: str) -> None:
     if kind == "python":
         commands = [["python3", "-m", "py_compile", *files]]
     elif kind == "action":
-        commands = [["bash", "scripts/check-github-action-shas.sh", *files]]
+        commands = [["bash", "scripts/check-github-actions.sh", *files]]
     else:
         commands = [["bash", *(["-n"] if kind == "shell" else []), path] for path in files]
     for command in commands:

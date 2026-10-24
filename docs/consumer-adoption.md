@@ -54,7 +54,7 @@ pre-commit checks. The `pre-commit` profile already includes `sync`.
 | `python`        | Shared tool catalog, version readers, and no-build-package check                 | Local Python projects, uv lockfiles, and any unique tool pins         |
 | `security`      | Shared tool catalog, typed audit runner, version readers, and scanner installers | Local audit policy, scanner configs, dependency files, and CI wiring  |
 | `tool-versions` | Shared catalog and readers for Cargo, Rust, repository tools, and uv             | Local compiler pin and any unique tool pins                           |
-| `ci`            | GitHub Action SHA checker and zizmor hook                                        | Workflow paths and network access to resolve release tags             |
+| `ci`            | GitHub Action pin and release cooldown checker and zizmor hook                   | Workflow paths, curl, jq, and GitHub tag/release network access       |
 | `all`           | Each artifact in the manifest                                                    | Each contract above                                                   |
 
 Run the catalog command to see each artifact's default target and profile membership:
@@ -194,14 +194,21 @@ Remove duplicated baseline rules from the local guide during the same adoption r
 local page focused on NautilusTrader's directories, commands, and documented exceptions, and link
 it to `shell_style.md`.
 
-Its GitHub Action checker also has a local target:
+NautilusTrader's locked checker path is `scripts/ci/check-github-action-shas.sh`, which differs from the
+shared default `scripts/check-github-actions.sh`. Refresh every artifact in its locked selection while
+keeping that recorded path:
 
 ```bash
-sync/sync.bash update \
-  --consumer ../nautilus_trader \
-  --add github-action-pin-check \
-  --target github-action-pin-check=scripts/ci/check-github-action-shas.sh
+sync/sync.bash update --consumer ../nautilus_trader
 ```
+
+The checker requires Bash, Git, curl, and jq. It verifies source comments, full commit SHAs, tag matches,
+and a 14-day cooldown measured from the matching GitHub release's `published_at` timestamp. Missing or
+invalid release metadata and failed lookups fail the check. Supply `GITHUB_TOKEN` in CI to authenticate
+release lookups.
+
+Run the checker against all tracked workflows and composite actions before CI builds, early in local
+pre-flight, and from an always-run pre-push hook. Use the same Make target for all three entry points.
 
 Vendor the Cargo profile's artifacts together. Run NautilusTrader's consumer tests for the cooldown checker
 and dependency update transaction. Commit the artifacts only when those tests pass:
@@ -337,7 +344,7 @@ Use `update --add` to grow an existing selection without restating it:
 sync/sync.bash update \
   --consumer ../consumer_repository \
   --add github-action-pin-check \
-  --target github-action-pin-check=scripts/ci/check-github-action-shas.sh
+  --target github-action-pin-check=scripts/ci/check-github-actions.sh
 ```
 
 Changing a locked target or removing an artifact requires a separate migration. Run `vendor` with the complete

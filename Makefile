@@ -35,7 +35,8 @@ outdated: check-tool-updates
 pre-commit:
 	$(PREK) run --all-files
 
-pre-flight: pre-commit
+pre-flight: check-github-action-pins
+	$(MAKE) pre-commit
 
 test:
 	@python3 -B scripts/run-make-check.py test '$(origin TEST_FILES)'

@@ -76,6 +76,8 @@ jobs:
           persist-credentials: false
 
       - name: Check GitHub Action pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: make check-github-action-pins
 
       - name: Set up Python

@@ -119,8 +119,8 @@ profiles = ["cargo"]
 
 [[artifact]]
 id = "github-action-pin-check"
-source = "scripts/check-github-action-shas.sh"
-target = "scripts/check-github-action-shas.sh"
+source = "scripts/check-github-actions.sh"
+target = "scripts/check-github-actions.sh"
 executable = true
 profiles = ["ci"]
 

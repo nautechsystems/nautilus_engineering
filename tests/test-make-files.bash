@@ -34,10 +34,11 @@ set -euo pipefail
 printf 'test ran\n' >> "$MARKER"
 BASH
 printf 'name: example\n' > "${repo}/.github/workflows/with space.yaml"
-cat > "${repo}/scripts/check-github-action-shas.sh" << 'BASH'
+cat > "${repo}/scripts/check-github-actions.sh" << 'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" >> "$MARKER"
+exit "${FAIL_ACTION_CHECK:-0}"
 BASH
 real_git=$(command -v git)
 real_bash=$(command -v bash)
@@ -120,6 +121,31 @@ for target in check-python check-shell test check-github-action-pins; do
     failures=$((failures + 1))
   fi
 done
+
+cat > "${test_root}/bin/prek" << 'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$#" == 2 && "$1" == run && "$2" == --all-files ]] || exit 2
+printf 'pre-commit ran\n' >> "$MARKER"
+BASH
+chmod +x "${test_root}/bin/prek"
+
+: > "$MARKER"
+expect_status 'pre-flight checks all Action releases before pre-commit' 0 \
+  make --no-print-directory -C "$repo" pre-flight PREK=prek
+expected=$(printf '%s\n' "${repo}/.github/workflows/with space.yaml" 'pre-commit ran')
+if [[ "$(< "$MARKER")" != "$expected" ]]; then
+  echo 'FAIL pre-flight did not check Action releases before pre-commit' >&2
+  failures=$((failures + 1))
+fi
+
+: > "$MARKER"
+expect_status 'pre-flight stops when the Action release gate fails' 2 \
+  env FAIL_ACTION_CHECK=1 make --no-print-directory -C "$repo" pre-flight PREK=prek
+if [[ "$(< "$MARKER")" != "${repo}/.github/workflows/with space.yaml" ]]; then
+  echo 'FAIL pre-flight continued after the Action release gate failed' >&2
+  failures=$((failures + 1))
+fi
 
 : > "$MARKER"
 expect_status 'CI companion tests are discovered beside their scripts' 0 \

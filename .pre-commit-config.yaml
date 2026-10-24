@@ -1,3 +1,6 @@
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -99,12 +102,20 @@ repos:
         language: system
         types: [markdown]
 
-      - id: check-github-action-shas
+      - id: check-github-actions
         name: check GitHub Action pins
-        description: Verifies external actions use full SHAs matching their named release tags
-        entry: bash scripts/check-github-action-shas.sh
+        description: Verifies external actions use full SHAs matching release tags published at least 14 days ago
+        entry: bash scripts/check-github-actions.sh
         language: system
         files: ^\.github/(actions|workflows)/.*\.ya?ml$
+
+      - id: check-github-action-pins
+        name: check all GitHub Action pins and release cooldowns
+        entry: make check-github-action-pins
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
 
       - id: check-repository
         name: check repository behavior
