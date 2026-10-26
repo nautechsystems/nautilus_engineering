@@ -149,8 +149,9 @@ make check-tool-updates
 
 The report lists each pin with its kind, latest release, release UTC timestamp, and age.
 
-**Cooldown**: Python packages appear as `python` and use 7 days. Other tools appear as `tool` and
-use 3 days. Native tools such as prek, ruff, and uv remain tools even when distributed through PyPI.
+**Cooldown**: Python packages appear as `python` and use 7 days. uv also uses 7 days because its pin
+updates also change consumer Docker images. Other tools use 3 days. Native tools such as prek, ruff,
+and uv appear as `tool` even when distributed through PyPI.
 To override both defaults, set `COOLDOWN_DAYS`. When the latest release is still within its cooldown,
 subsequent rows list each newer release between the pin and the latest release.
 

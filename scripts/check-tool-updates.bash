@@ -12,7 +12,7 @@
 #
 # Run on demand or through `make outdated`. This is a read-only report; it does
 # not change tools.toml. For each differing pin, the summary names the newest
-# upstream release past its adoption cooldown (7 days for Python packages,
+# upstream release past its adoption cooldown (7 days for Python packages and uv,
 # 3 days for other tools; COOLDOWN_DAYS overrides both defaults)
 # as that pin's upgrade target; a target can be older than the latest release
 # when the latest release is still within the cooldown. When that latest
@@ -427,7 +427,7 @@ print_release_row() {
 
 count=$(printf '%s\n' "$entries" | wc -l | tr -d '[:space:]')
 echo "Checking ${count} cataloged tool pin(s) against upstream releases"
-printf 'Cooldowns: Python packages %s days; tools %s days\n' "$COOLDOWN_DAYS_PYTHON" "$COOLDOWN_DAYS_TOOLS"
+printf 'Cooldowns: Python packages and uv %s days; other tools %s days\n' "$COOLDOWN_DAYS_PYTHON" "$COOLDOWN_DAYS_TOOLS"
 echo
 
 printf '%-20s %-14s %-12s %-12s %-20s %s\n' "name" "kind" "pinned" "latest" "released (UTC)" "age"
@@ -454,11 +454,11 @@ tab=$(printf '\t')
 
 while IFS='|' read -r name version source kind; do
   [[ -z "$name" ]] && continue
-  case "$kind" in
-    python)
+  case "$kind:$name" in
+    python:* | tool:uv)
       cooldown_days=$COOLDOWN_DAYS_PYTHON
       ;;
-    tool)
+    tool:*)
       cooldown_days=$COOLDOWN_DAYS_TOOLS
       ;;
     *)

@@ -277,7 +277,7 @@ write_catalog
 write_fixture
 expect_report "all pins current across every release source" 0 \
   "name                 kind           pinned       latest       released (UTC)" \
-  "Cooldowns: Python packages 7 days; tools 3 days" \
+  "Cooldowns: Python packages and uv 7 days; other tools 3 days" \
   "alpha                tool           1.2.3" \
   "beta                 python         2.0.0" \
   "5d 12h" \
@@ -405,15 +405,23 @@ cat >> "${test_root}/tools.toml" << 'TOML'
 kind = "tool"
 version = "4.0.0"
 releases = "pypi:native"
+
+[uv]
+kind = "tool"
+version = "0.13.0"
+releases = "pypi:uv"
 TOML
 printf 'pypi native 4.1.0 %s\n' "$older_release" >> "$fixture"
-expect_report "Python packages wait seven days while native PyPI tools wait three" 1 \
+printf 'pypi uv 0.13.5 %s\n' "$older_release" >> "$fixture"
+expect_report "Python packages and uv wait seven days while other PyPI tools wait three" 1 \
   "beta                 python         2.0.0        2.1.0" \
   "native               tool           4.0.0        4.1.0" \
+  "uv                   tool           0.13.0       0.13.5" \
   "Upgradable pins (1): newest release past its cooldown" \
   "native 4.0.0 -> 4.1.0" \
-  "Cooldown holds (1): every newer release is within its cooldown" \
-  "beta 2.0.0 -> 2.1.0 (5d 12h within cooldown)"
+  "Cooldown holds (2): every newer release is within its cooldown" \
+  "beta 2.0.0 -> 2.1.0 (5d 12h within cooldown)" \
+  "uv 0.13.0 -> 0.13.5 (5d 12h within cooldown)"
 
 output=$(
   PATH="${fake_bin}:$PATH" python3 - "${test_root}/scripts/check-tool-updates.bash" << 'PY_COLOR'
@@ -433,6 +441,13 @@ else
   failures=$((failures + 1))
 fi
 
+sed "s|^pypi uv .*|pypi uv 0.13.5 ${recent_release} 0.13.4 ${older_release} 0.13.3 ${mature_release}|" \
+  "$fixture" > "${fixture}.tmp"
+mv "${fixture}.tmp" "$fixture"
+expect_report "uv upgrade target excludes releases between three and seven days" 1 \
+  "uv 0.13.0 -> 0.13.3 (latest 0.13.5 within cooldown)"
+expect_absent "uv does not target the five-day release" "uv 0.13.0 -> 0.13.4"
+
 write_catalog
 write_fixture
 sed '/^\[delta\]$/,/^$/s/kind = "tool"/kind = "python"/' \
@@ -446,28 +461,28 @@ expect_report "Python packages on GitHub also wait seven days" 0 \
   "delta 3.1.0 -> 3.2.0 (5d 12h within cooldown)"
 expect_absent "GitHub Python package has no eligible upgrade" "Upgradable pins"
 
-for kind_days in 'tool 3' 'python 7'; do
-  read -r boundary_kind boundary_days <<< "$kind_days"
+for kind_days in 'beta tool 3' 'beta python 7' 'uv tool 7'; do
+  read -r boundary_name boundary_kind boundary_days <<< "$kind_days"
   cat > "${test_root}/tools.toml" << TOML
-[beta]
+[$boundary_name]
 kind = "$boundary_kind"
 version = "2.0.0"
-releases = "pypi:beta"
+releases = "pypi:$boundary_name"
 TOML
   for remaining in 1 0; do
     boundary_release=$(jq -nr --argjson now "$TOOL_UPDATES_NOW" \
       --argjson days "$boundary_days" --argjson remaining "$remaining" \
       '$now - $days * 86400 + $remaining | todateiso8601')
-    printf 'pypi beta 2.1.0 %s\n' "$boundary_release" > "$fixture"
+    printf 'pypi %s 2.1.0 %s\n' "$boundary_name" "$boundary_release" > "$fixture"
     if [[ "$remaining" == 1 ]]; then
-      expect_report "$boundary_kind holds one second before $boundary_days days" 0 \
+      expect_report "$boundary_name $boundary_kind holds one second before $boundary_days days" 0 \
         "Cooldown holds (1): every newer release is within its cooldown"
       expect_absent "boundary hold has no upgrade" "Upgradable pins"
       expect_absent "boundary hold has no upgradeable flag" "** UPGRADEABLE"
     else
-      expect_report "$boundary_kind allows a release at exactly $boundary_days days" 1 \
+      expect_report "$boundary_name $boundary_kind allows a release at exactly $boundary_days days" 1 \
         "Upgradable pins (1): newest release past its cooldown" \
-        "beta 2.0.0 -> 2.1.0" \
+        "$boundary_name 2.0.0 -> 2.1.0" \
         "${boundary_days}d  0h  ** UPGRADEABLE"
       expect_absent "eligible boundary has no hold" "Cooldown holds"
     fi
@@ -627,15 +642,24 @@ expect_absent "upgradeable report has no recent flag" "** RECENT"
 sed "s|^pypi beta 2.0.0 .*|pypi beta 2.1.0 ${mature_release}|" \
   "$fixture" > "${fixture}.tmp"
 mv "${fixture}.tmp" "$fixture"
+cat >> "${test_root}/tools.toml" << 'TOML'
+
+[uv]
+kind = "tool"
+version = "0.13.0"
+releases = "pypi:uv"
+TOML
+printf 'pypi uv 0.13.5 %s\n' "$mature_release" >> "$fixture"
 status=0
 output=$(PATH="${fake_bin}:$PATH" COOLDOWN_DAYS=10 \
   bash "${test_root}/scripts/check-tool-updates.bash" 2>&1) ||
   status=$?
 if [[ "$status" == 0 &&
   "$output" == *"5d 12h  ** RECENT"* &&
-  "$output" == *"Cooldowns: Python packages 10 days; tools 10 days"* &&
+  "$output" == *"Cooldowns: Python packages and uv 10 days; other tools 10 days"* &&
   "$output" == *"alpha 1.2.3 -> 1.3.0 (5d 12h within cooldown)"* &&
-  "$output" == *"beta 2.0.0 -> 2.1.0 (8d 12h within cooldown)"* ]]; then
+  "$output" == *"beta 2.0.0 -> 2.1.0 (8d 12h within cooldown)"* &&
+  "$output" == *"uv 0.13.0 -> 0.13.5 (8d 12h within cooldown)"* ]]; then
   printf 'ok   %s\n' "cooldown window is configurable"
 else
   printf 'FAIL %s: exit %s\n%s\n' "cooldown window is configurable" "$status" "$output" >&2
@@ -653,6 +677,7 @@ else
   failures=$((failures + 1))
 fi
 
+write_catalog
 write_fixture
 sed 's/^github example\/delta 3.1.0 /github example\/delta 3.2.0 /' "$fixture" \
   > "${fixture}.tmp"
