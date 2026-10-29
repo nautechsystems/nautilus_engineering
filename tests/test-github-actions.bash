@@ -26,7 +26,7 @@ cat > "${fake_bin}/git" << 'FAKE_GIT'
 set -euo pipefail
 tag=${FAKE_TAG:-v1.2.3}
 if [[ "$#" != 4 || "$1" != ls-remote ||
-  "$2" != https://github.com/actions/checkout.git ||
+  "$2" != "https://github.com/${FAKE_REPO:-actions/checkout}.git" ||
   "$3" != "refs/tags/$tag" || "$4" != "refs/tags/$tag^{}" ]]; then
   exit 2
 fi
@@ -46,7 +46,7 @@ cat > "$FAKE_CURL_HEADERS"
 expected=(-fsSL --connect-timeout 10 --max-time 30 --header @-
   --header 'Accept: application/vnd.github+json'
   --header 'X-GitHub-Api-Version: 2022-11-28'
-  "https://api.github.com/repos/actions/checkout/releases/tags/${FAKE_ENCODED_TAG:-v1.2.3}")
+  "https://api.github.com/repos/${FAKE_REPO:-actions/checkout}/releases/tags/${FAKE_ENCODED_TAG:-v1.2.3}")
 if [[ "$#" != "${#expected[@]}" ]]; then
   exit 2
 fi
@@ -109,6 +109,58 @@ for annotated in 0 1; do
     fi
   done
 done
+
+reviewed_sha=46b06cea07f9e64621fdf066ba77ac6915163d43
+printf '%s\n' '{"tag_name":"v2.22.3","draft":false,"published_at":"2026-10-24T11:59:59Z"}' \
+  > "$FAKE_RELEASE_JSON"
+for candidate in "$reviewed_sha" "$commit_sha"; do
+  printf '# https://github.com/step-security/harden-runner\nuses: step-security/harden-runner@%s # v2.22.3\n' \
+    "$candidate" > "$action_file"
+  status=0
+  output_text=$(FAKE_REPO=step-security/harden-runner FAKE_TAG=v2.22.3 \
+    FAKE_ENCODED_TAG=v2.22.3 FAKE_COMMIT_SHA="$candidate" \
+    bash "$CHECK_SCRIPT" "$action_file" 2>&1) || status=$?
+  if [[ "$candidate" == "$reviewed_sha" ]]; then
+    [[ "$status" == 0 ]]
+    [[ "$output_text" == 'Checking step-security/harden-runner (v2.22.3): OK (reviewed DNS/proxy fix; exact-pin cooldown exception)' ]]
+  else
+    [[ "$status" == 1 ]]
+    [[ "$output_text" == 'Checking step-security/harden-runner (v2.22.3): FAILED (release is less than 14 complete days old)' ]]
+  fi
+done
+
+printf '# https://github.com/step-security/harden-runner\nuses: step-security/harden-runner@%s # v2.22.3\n' \
+  "$reviewed_sha" > "$action_file"
+status=0
+output_text=$(FAKE_REPO=step-security/harden-runner FAKE_TAG=v2.22.3 \
+  FAKE_ENCODED_TAG=v2.22.3 bash "$CHECK_SCRIPT" "$action_file" 2>&1) || status=$?
+[[ "$status" == 1 ]]
+[[ "$output_text" == "Checking step-security/harden-runner (v2.22.3): MISMATCH (expected: $reviewed_sha, got: $commit_sha)" ]]
+
+for metadata in \
+  '{"tag_name":"v2.22.3","draft":true,"published_at":"2026-10-24T11:59:59Z"}' \
+  '{"tag_name":"v9.9.9","draft":false,"published_at":"2026-10-24T11:59:59Z"}' \
+  '{"tag_name":"v2.22.3","draft":false,"published_at":"invalid"}'; do
+  printf '%s\n' "$metadata" > "$FAKE_RELEASE_JSON"
+  status=0
+  output_text=$(FAKE_REPO=step-security/harden-runner FAKE_TAG=v2.22.3 \
+    FAKE_ENCODED_TAG=v2.22.3 FAKE_COMMIT_SHA="$reviewed_sha" \
+    bash "$CHECK_SCRIPT" "$action_file" 2>&1) || status=$?
+  [[ "$status" == 1 ]]
+  [[ "$output_text" == 'Checking step-security/harden-runner (v2.22.3): FAILED (missing or invalid release published_at metadata)' ]]
+done
+
+printf '# https://github.com/actions/checkout\nuses: actions/checkout@%s # v1.2.3\n' \
+  "$reviewed_sha" > "$action_file"
+printf '%s\n' '{"tag_name":"v1.2.3","draft":false,"published_at":"2026-10-24T11:59:59Z"}' \
+  > "$FAKE_RELEASE_JSON"
+status=0
+output_text=$(FAKE_COMMIT_SHA="$reviewed_sha" bash "$CHECK_SCRIPT" "$action_file" 2>&1) || status=$?
+[[ "$status" == 1 ]]
+[[ "$output_text" == 'Checking actions/checkout (v1.2.3): FAILED (release is less than 14 complete days old)' ]]
+
+printf '# https://github.com/actions/checkout\nuses: actions/checkout/subpath@%s # v1.2.3\n' \
+  "$commit_sha" > "$action_file"
 
 for metadata in \
   '{}' \
