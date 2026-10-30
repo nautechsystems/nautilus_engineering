@@ -1,7 +1,7 @@
 # Adopt Nautilus Engineering Files
 
-Use this guide to vendor shared standards, configuration, pre-commit definitions, or repository checks into a
-Nautilus repository. Vendoring copies committed files into the consumer. It records their source and hashes in
+Vendor shared standards, configuration, pre-commit definitions, or repository checks into a Nautilus
+repository. Vendoring copies committed files into the consumer and records their source and hashes in
 `.nautilus-engineering.lock`.
 
 ## Before you start
@@ -33,8 +33,8 @@ marker or process lock exists.
 
 ## Choose a selection
 
-Profiles select related artifacts. Multiple profiles form a union, so the command copies overlapping artifacts
-once.
+Profiles select related artifacts. When you select multiple profiles, the command includes every artifact
+from those profiles and copies each overlapping artifact once.
 
 - For a new repository, use profiles.
 - For a mature repository, select artifacts explicitly and adopt them in reviewable groups.
@@ -69,8 +69,10 @@ If a repository stores an artifact elsewhere, use `--target ARTIFACT=PATH`. Arti
 ## Choose a pre-commit layout
 
 Without managed markers, the renderer creates one section immediately after `repos:`. Existing consumers can
-retain that layout. To run sync checks first, add both split marker pairs before you render the configuration.
-This layout puts other shared definitions after consumer-owned checks:
+keep that layout.
+
+To run sync checks first and place other shared definitions after consumer-owned checks, add both split
+marker pairs before you render the configuration:
 
 ```yaml
 repos:
@@ -123,8 +125,8 @@ The renderer handles unmanaged copies of selected definitions as follows:
   To keep the local variant, leave that fragment unselected. Alternatively, reconcile the difference as an
   explicit part of the adoption.
 
-Review the complete consumer diff, including the lock and checker. Then verify the worktree copies
-and rendered section:
+Review the complete consumer diff, including the lock and checker. From the consumer root, verify the
+worktree copies and rendered section:
 
 ```bash
 bash scripts/check-nautilus-engineering-sync.bash
@@ -210,28 +212,35 @@ release lookups.
 Run the checker against all tracked workflows and composite actions before CI builds, early in local
 pre-flight, and from an always-run pre-push hook. Use the same Make target for all three entry points.
 
-Vendor the Cargo profile's artifacts together. Run NautilusTrader's consumer tests for the cooldown checker
-and dependency update transaction. Commit the artifacts only when those tests pass:
+Vendor the Cargo profile's artifacts together:
 
 ```bash
 sync/sync.bash update \
   --consumer ../nautilus_trader \
   --add rustfmt-config \
+  --add shared-tool-catalog \
   --add cargo-tool-version \
   --add cargo-cooldown-check \
   --add rust-toolchain-version \
   --add cargo-dependency-update
 ```
 
-The shared Cargo scripts discover tracked lockfiles and update each corresponding workspace. They
-also validate paths and serialize update transactions. Consumer tests must cover NautilusTrader's
-lockfile layout, Cargo metadata, and local command wiring.
+The shared Cargo scripts discover tracked lockfiles, update each corresponding workspace, validate paths,
+and serialize update transactions.
+
+Run NautilusTrader's consumer tests for the cooldown checker and dependency update transaction. These tests
+must cover its lockfile layout, Cargo metadata, and local command wiring. Commit the artifacts only when the
+tests pass.
 
 ## Gate Rust compilation on dependency cooldown
 
 Each consumer must run the full cooldown check before each entry point that can compile Rust. This ordering
 checks resolved registry versions before dependency build scripts or procedural macros can execute. Vendoring
 the script alone does not enforce this policy.
+
+Before running the gate, install curl and jq alongside Git and Bash. Set `days` in the consumer's
+`Cargo.toml` under `[workspace.metadata.cooldown]` to an integer in [1, 365]. Alternatively, pass `--days`
+with that value.
 
 Run the gate from the consumer root:
 
@@ -266,17 +275,17 @@ can compile Rust. Enforce these requirements in the consumer:
 
 ### Cache full checks
 
-The cache records only successful full checks. It does not record failed checks. If all cache inputs are
-unchanged, the check returns early without registry requests. These inputs are the lockfiles, policy, audits,
-database, script, and trusted-base content. A change to any input requires another full check.
+The cache records only successful full checks, never failed checks. If the lockfiles, policy, audits,
+database, script, and trusted-base content are all unchanged, the check returns early without registry
+requests. A change to any input requires another full check.
 
 Keep the cache as local verification state. **Never restore it from an untrusted source**.
 
 ### Commit the publication-date database
 
 Commit the cooldown database (`.supply-chain/crate-dates.json`) beside the audits. Registry publication dates
-are immutable. Thus, the full check trusts recorded entries offline and makes no registry requests for them.
-The committed database is therefore the trust anchor for those dates.
+are immutable, so the full check trusts recorded entries offline without registry requests. The committed
+database is the trust anchor for those dates.
 
 Against a comparison base, the check re-verifies added entries against crates.io based on what
 the base holds at the same path:
@@ -308,10 +317,11 @@ lockfiles did not resolve are re-verified.
 The check caches the successful result. Thus, registry requests repeat only when the branch or the trusted
 base changes.
 
-- A checkout that cannot resolve the trusted base fails the gate.
-- A shallow checkout that lacks the trusted base trusts recorded dates instead. Keep a full-history job, such
-  as pre-commit, that runs the check against the trusted base.
-- An explicit `--base` overrides the setting and must resolve.
+- **Unresolved revision**: A checkout that cannot resolve the trusted base fails the gate, except for the
+  shallow-checkout case below.
+- **Shallow checkout**: If the configured trusted base is missing, the check trusts recorded dates instead.
+  Keep a full-history job, such as pre-commit, that runs the check against the trusted base.
+- **Explicit override**: `--base` overrides the setting and must resolve, including in a shallow checkout.
 
 ## Update an existing adoption
 
@@ -350,8 +360,8 @@ sync/sync.bash update \
 Changing a locked target or removing an artifact requires a separate migration. Run `vendor` with the complete
 intended selection and each retained target override.
 
-The command reports paths managed by the old lock that are absent from the new selection. It leaves those
-paths unchanged. Delete them only as an explicit, reviewed consumer change.
+The command reports paths managed by the old lock that are absent from the new selection and leaves them
+unchanged. Delete them only as an explicit, reviewed consumer change.
 
 **Selection replacement**: Never rerun `vendor` with only the new artifact or profile when a consumer lock
 exists. `vendor` replaces the managed selection in the lock. `update` keeps it.
@@ -394,8 +404,10 @@ and wire the same runner into local pre-flight checks and CI.
 ## Sync and recovery behavior
 
 Vendoring rejects absolute paths, parent traversal, symlink traversal, Windows path aliases, special-file
-targets, duplicate targets, and overlapping managed paths. It reads each artifact from the committed source
-revision. It prepares replacement files in the consumer and replaces the lock last.
+targets, duplicate targets, and overlapping managed paths.
+
+It reads each artifact from the committed source revision, prepares replacement files in the consumer, and
+replaces the lock last.
 
 During replacement, prior files and the old lock remain under the temporary directory named in
 `.nautilus-engineering.syncing`.

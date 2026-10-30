@@ -1,8 +1,8 @@
 # Security Policy
 
-Nautech Systems values reports that help protect its open-source projects. Use this policy for
-security issues in Nautilus Engineering. NautilusTrader maintains its own security policy, and a
-repository-specific policy takes precedence where one exists.
+Use this policy to report security issues in Nautilus Engineering. Nautech Systems values reports that help
+protect its open-source projects. NautilusTrader maintains its own security policy. Where a repository has
+its own policy, that policy takes precedence.
 
 ## Scope
 
@@ -39,7 +39,7 @@ Nautech Systems commits to these response targets:
 
 - An initial response within 48 hours.
 - A status update within 7 days with the initial assessment.
-- A fix for critical vulnerabilities within 30 days and other confirmed vulnerabilities within 90 days.
+- A fix within 30 days for critical vulnerabilities and within 90 days for other confirmed vulnerabilities.
 - Coordination of a public disclosure date with the reporter.
 
 ## Responsible disclosure

@@ -17,13 +17,18 @@ scope, advisory exceptions, and enforcement choices.
 | Tools used by only one repository   | Consumer repository  | Local `tools.toml` or Cargo workspace metadata  |
 
 The shared version readers use `.nautilus-engineering/tools.toml` first, then a consumer-local catalog for
-tools that are not shared. They fail if both catalogs define the same tool. Thus, shared tools have one
-release decision, and consumers keep control of repository-specific tools.
+tools that are not shared. They fail if both catalogs define the same tool. This keeps shared release
+decisions central while consumers control repository-specific tools.
 
 ## Configure a consumer
 
-Create `security-audit.toml` at the repository root. Each dependency surface is explicit. Paths must exist,
-use POSIX separators, and stay within the repository. Unknown fields and unsupported values fail validation.
+First, [adopt the `security` profile](consumer-adoption.md) to copy the shared tool catalog, audit runner,
+version readers, and scanner installers into the consumer. Run this guide's commands from the consumer root.
+
+Create `security-audit.toml` at that root and list each dependency surface explicitly:
+
+- Paths must exist, use POSIX separators, and stay within the repository.
+- Unknown fields and unsupported values fail validation.
 
 ```toml
 version = 1
@@ -63,9 +68,9 @@ lockfiles = ["Cargo.lock", "python/uv.lock", "docs/package-lock.json"]
 report = false
 ```
 
-Add another array entry for a secondary Cargo workspace, Python project, or Node project. A Cargo
-fuzz workspace can therefore name its own manifest, lockfile, deny configuration, and cargo-vet
-store without adding special cases to the shared runner.
+For a secondary Cargo workspace, Python project, or Node project, add another array entry. For example, a
+Cargo fuzz workspace can name its own manifest, lockfile, deny configuration, and cargo-vet store without
+special cases in the shared runner.
 
 ### Cargo audit
 
@@ -99,9 +104,9 @@ Each `[[python]]` entry requires `project` and a `python` major and minor versio
 - `all-groups` or `groups`: select all dependency groups or name individual groups. Do not use both.
 - `ignore-vulns`: repository-owned pip-audit exceptions.
 
-The runner exports the frozen uv resolution without local project, workspace, or path packages. Then it runs
-the exact central `pip-audit` version in an isolated uv environment. It enables hash checking and disables pip
-resolution. Thus, the audit covers the locked third-party dependency set.
+The audit covers the locked third-party dependency set. The runner exports the frozen uv resolution without
+local project, workspace, or path packages. It then runs the exact central `pip-audit` version in an isolated
+uv environment with hash checking enabled and pip resolution disabled.
 
 The Python audit uses a 30-second socket timeout and retries PyPI connection timeouts up to three times
 without delay. Vulnerability findings and other errors fail immediately.
@@ -161,12 +166,14 @@ Run each configured dependency audit:
 python3 scripts/security-audit.py run
 ```
 
-**Version gate**: Tool checks run before dependency commands. A missing or stale scanner stops the run
-before it can produce results from a different scanner release.
+**Version gate**: Tool checks run before dependency commands. A missing or stale scanner stops the run before
+it can produce results from a different scanner release.
 
-**Audit results**: Commands capture successful output and show it only for configured reports. Failures show
-their captured output. The runner continues through the remaining dependency surfaces before it returns a
-failing status.
+**Audit results**:
+
+- Commands show captured successful output only for configured reports.
+- Failures show their captured output.
+- After a failure, the runner checks the remaining dependency surfaces before returning a failing status.
 
 ## Use one entry point locally and in CI
 

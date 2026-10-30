@@ -14,17 +14,17 @@ Each rule has one of three levels:
 
 - **Required**: Applies to each in-scope shell artifact. Rules stated as unqualified imperatives such as "Use"
   and "Do not", or with "must", are Required.
-- **Preferred**: Identifies the default when more than one valid form exists. Preferred rules use "Prefer" and
-  do not affect conformance.
+- **Preferred**: Gives the default when more than one valid form exists. Preferred rules use "Prefer" and do
+  not affect conformance.
 - **Transitional**: Applies to the named construct when it is added or substantially edited, and is labeled
   **Transitional** or described as transitional. Existing instances may remain until a separate migration.
 
-An unchanged existing instance of a Transitional construct conforms to this standard. Apply a
-transitional rule only to the named construct that is added or substantially edited. Changes
-elsewhere in the same file do not trigger a file-wide migration.
+Existing Transitional constructs conform while unchanged. Apply a transitional rule only to the named
+construct when you add or substantially edit it. Changes elsewhere in the same file do not trigger a
+file-wide migration.
 
-Statements with "may" or "allowed" give bounded permissions, not obligations. Any condition limiting that
-permission is Required.
+Statements with "may" or "allowed" give permission within stated limits. They do not create obligations.
+Any condition limiting that permission is Required.
 
 A repository may document a narrower local exception where its supported environment or existing
 interface requires one. The exception must name:
@@ -76,8 +76,8 @@ Use another language if the task centers on one of these needs:
 - Performance-sensitive logic.
 - Domain behavior that needs extensive unit tests.
 
-Script length is a review signal, not an automatic failure. Consider the expected growth. Also consider
-whether someone other than the author can maintain the control flow safely.
+Script length is a reason to review, not an automatic failure. Consider expected growth and whether someone
+other than the author can maintain the control flow safely.
 
 When you extract CI logic, keep workflow expressions, permissions, secret selection, and runner selection in
 the workflow. Pass ordinary values through arguments or environment variables. The script's exit status must
@@ -105,7 +105,7 @@ Test the script under each supported `/bin/sh`. Simple syntax and a clean ShellC
 portable behavior across different `sh` implementations.
 
 The extension policy is **transitional** because existing filenames may predate it. Some `.sh` files contain
-Bash. Treat their shebangs as the source of truth.
+Bash, so treat their shebangs as the source of truth.
 
 Do not rename an existing script only to change its extension. Apply the policy to new files and to scoped
 renames that already update each call site and document.
@@ -126,8 +126,8 @@ unless each caller provisions a newer version. Common Bash 4+ features and porta
 | `${var,,}` / `${var^^}`           | 4.0+         | `tr` for case conversion           |
 
 A CI-only script may use a newer Bash version or platform-specific tool when each caller guarantees that
-environment. Document the constraint near the code that depends on it. A path under a CI directory does not by
-itself make a script Linux-only. CI may also use macOS and Windows runners.
+environment. Document the constraint near the code that depends on it. A path under a CI directory does not
+make a script Linux-only because CI may also use macOS and Windows runners.
 
 Inline CI shell may use features guaranteed by that step's runner. Shared scripts invoked by the step retain
 their own portability target unless each direct caller guarantees the same version.
@@ -273,8 +273,8 @@ shell state. For a sourceable Bash file:
 For a standalone script that needs several functions, prefer a `main` entry point. For such scripts, prefer
 to define `main` first and put called functions below their callers.
 
-When a script uses `main`, invoke `main "$@"` after all function definitions. Thus, each function exists
-before execution starts.
+When a script uses `main`, invoke `main "$@"` after all function definitions so each function exists before
+execution starts.
 
 ## Integrate with task runners and CI
 
@@ -314,9 +314,10 @@ prek run shfmt --files path/to/script.bash
 prek run shellcheck --files path/to/script.bash
 ```
 
-`shfmt` updates files in place. Before you run ShellCheck, review the formatter's changes. ShellCheck selects
-the language from the shebang. Thus, a `.sh` file with `#!/usr/bin/env sh` receives POSIX checks even though
-the formatter uses the common Bash parser.
+`shfmt` updates files in place. Before you run ShellCheck, review the formatter's changes.
+
+ShellCheck selects the language from the shebang. A `.sh` file with `#!/usr/bin/env sh` therefore receives
+POSIX checks even though the formatter uses the common Bash parser.
 
 Keep ShellCheck suppressions on the narrowest applicable line. Add a nearby reason when the
 constraint is not clear from the code. Do not disable a check for a whole repository to silence one

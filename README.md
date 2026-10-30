@@ -4,13 +4,13 @@ Nautilus Engineering provides shared engineering standards, lint configurations,
 repository checks for Nautilus projects. Consumer repositories vendor selected files at a pinned commit. They
 review each update locally and keep their own project policy.
 
-It covers stable behavior that should stay consistent across projects. Release processes,
+The shared files define stable behavior that should stay consistent across projects. Release processes,
 deployment logic, generated-file exceptions, compiler pins, and other repository-specific
 decisions stay with each consumer.
 
 ## How shared changes reach a repository
 
-1. A shared change is committed and tested here.
+1. Maintainers commit and test a shared change here.
 1. A consumer vendors selected artifacts from that exact commit.
 1. The sync command records the source revision, manifest hash, target paths, file hashes, and executable
    modes in `.nautilus-engineering.lock`.
@@ -38,11 +38,11 @@ on its own schedule.
 
 ## Adopt shared files
 
-- [`docs/consumer-adoption.md`](docs/consumer-adoption.md): select profiles, make a first adoption,
+- [Consumer adoption](docs/consumer-adoption.md): select profiles, make a first adoption,
   update an existing lock, and integrate the managed pre-commit section. It includes a phased path
   for established repositories such as NautilusTrader, where local hooks and target paths must
   remain intact.
-- [`docs/supply-chain-security.md`](docs/supply-chain-security.md): the shared scanner catalog,
+- [Supply-chain security](docs/supply-chain-security.md): the shared scanner catalog,
   typed audit policy, installation path, and local and CI wiring for dependency security checks.
 
 Before you commit a lock to a consumer, make its source revision available from the repository URL in
@@ -90,7 +90,7 @@ GitHub Action checks, and `make check`.
 The Makefile runs the exact cataloged prek release through uv.
 Install the pre-commit and pre-push hooks with `prek install`.
 
-To run only the syntax checks, tool-pin validation, and repository tests, use:
+To run only syntax checks, tool-pin validation, and repository tests, use:
 
 ```bash
 make check
@@ -98,17 +98,25 @@ make check
 
 Make keeps spaces in discovered filenames and stops if Git discovery fails.
 
-To select files, set `PYTHON_FILES`, `SHELL_FILES`, or `TEST_FILES` on the `make` command line. For example,
-use `make test TEST_FILES=tests/test-sync.bash`. Use `ACTION_FILES` with `make check-github-action-pins`.
+To select files, set the matching variable on the `make` command line:
+
+- **Python syntax checks**: `PYTHON_FILES`.
+- **Shell syntax checks**: `SHELL_FILES`.
+- **Tests**: `TEST_FILES`, as in `make test TEST_FILES=tests/test-sync.bash`.
+- **GitHub Action checks**: `ACTION_FILES` with `make check-github-action-pins`.
 
 Selections are shell-word lists: quote filenames containing spaces inside the value. Empty or malformed
 explicit lists fail. The runner parses values without a shell after Make expands its own variable references
 and functions.
 
-`scripts/check-github-actions.sh` requires Bash, Git, curl, and jq. It checks source comments, full
-commit SHAs, and matching release tags. The matching GitHub release's `published_at` timestamp must be
-at least 14 complete days old. Missing or invalid publication metadata and failed lookups fail the check;
-tag and commit dates do not substitute for a release publication date.
+`scripts/check-github-actions.sh` requires Bash, Git, curl, and jq. It checks:
+
+- Source comments.
+- Full commit SHAs that match the named release tags.
+- A matching GitHub release whose `published_at` timestamp is at least 14 complete days old.
+
+Missing or invalid publication metadata and failed lookups fail the check. Tag and commit dates do not
+substitute for a release publication date.
 
 CI and pre-push check all workflows and composite actions. The commit hook checks changed workflow and
 composite Action files. Set `GITHUB_TOKEN` to authenticate release lookups. Public lookups also work
@@ -125,8 +133,7 @@ Consumer pre-flight targets run their own unit tests and configured dependency a
 
 ### Adoption status
 
-To compare each consumer's lock revision with the source `HEAD`, run the command below. The report includes
-changed and unadopted artifacts.
+To compare each consumer's lock revision with the source `HEAD` and list changed and unadopted artifacts, run:
 
 ```bash
 make adoption-status CONSUMERS="../consumer-a ../consumer-b"
@@ -143,17 +150,24 @@ To find cataloged tool pins whose upstream has a newer release, run:
 make check-tool-updates
 ```
 
-`make outdated` is an alias. Each `tools.toml` entry names its release source in `releases`, and
-`make check` verifies that the field stays complete. Each entry also declares `kind = "python"` or
-`kind = "tool"` to select its cooldown independently of the release source.
+`make outdated` is an alias. Each `tools.toml` entry declares:
+
+- `releases`: the release source. `make check` verifies that every entry has this field.
+- `kind`: `"python"` or `"tool"`, which selects the cooldown independently of the release source.
 
 The report lists each pin with its kind, latest release, release UTC timestamp, and age.
 
-**Cooldown**: Python packages appear as `python` and use 7 days. uv also uses 7 days because its pin
-updates also change consumer Docker images. Other tools use 3 days. Native tools such as prek, ruff,
-and uv appear as `tool` even when distributed through PyPI.
-To override both defaults, set `COOLDOWN_DAYS`. When the latest release is still within its cooldown,
-subsequent rows list each newer release between the pin and the latest release.
+**Cooldowns**:
+
+- Python packages use 7 days.
+- uv uses 7 days because its pin updates also change consumer Docker images.
+- Other tools use 3 days.
+
+Python packages appear as `python`. Native tools such as prek, ruff, and uv appear as `tool` even when
+distributed through PyPI. To override both cooldown defaults, set `COOLDOWN_DAYS`.
+
+When the latest release is still within its cooldown, subsequent rows list each newer release between the
+pin and the latest release.
 
 In a terminal, release colors show age:
 
