@@ -1,0 +1,6 @@
+- repo: https://github.com/crate-ci/typos
+  rev: v1.51.1
+  hooks:
+    - id: typos
+      args: ["--force-exclude"]
+      types: [text]

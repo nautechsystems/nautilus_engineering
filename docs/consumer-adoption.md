@@ -42,20 +42,26 @@ from those profiles and copies each overlapping artifact once.
 Pair a functional profile with `sync` so the consumer receives the lock checker and the managed
 pre-commit checks. The `pre-commit` profile already includes `sync`.
 
-| Profile         | Shared files selected                                                            | Consumer contract                                                     |
-| --------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `pre-commit`    | Hook definitions, lint configs, Markdown table check, renderer, and sync check   | Existing config with one `repos:` key                                 |
-| `sync`          | Lock checker, sync hook definition, and renderer                                 | Pre-commit config or equivalent unconditional local and CI wiring     |
-| `markdown`      | Written standard, markdownlint config, table check, and hooks                    | Markdown paths and repository-specific exclusions                     |
-| `shell`         | Written standard, shfmt, and ShellCheck definitions                              | Bash-compatible scripts, local integration, and documented exceptions |
-| `yaml`          | yamllint config and definition                                                   | YAML paths and any generated-file exclusions                          |
-| `toml`          | Taplo config and definition                                                      | One complete repository Taplo policy                                  |
-| `cargo`         | Rust formatting, shared tools, version readers, cooldown check, and updates      | Local compiler pin, tracked lockfiles, Cargo policy, and script tests |
-| `python`        | Shared tool catalog, version readers, and no-build-package check                 | Local Python projects, uv lockfiles, and any unique tool pins         |
-| `security`      | Shared tool catalog, typed audit runner, version readers, and scanner installers | Local audit policy, scanner configs, dependency files, and CI wiring  |
-| `tool-versions` | Shared catalog and readers for Cargo, Rust, repository tools, and uv             | Local compiler pin and any unique tool pins                           |
-| `ci`            | GitHub Action pin and release cooldown checker and zizmor hook                   | Workflow paths, curl, jq, and GitHub tag/release network access       |
-| `all`           | Each artifact in the manifest                                                    | Each contract above                                                   |
+| Profile          | Shared files selected                                                            | Consumer contract                                                     |
+| ---------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `pre-commit`     | Hook definitions, lint configs, Markdown table check, renderer, and sync check   | Existing config with one `repos:` key                                 |
+| `sync`           | Lock checker, sync hook definition, and renderer                                 | Pre-commit config or equivalent unconditional local and CI wiring     |
+| `markdown`       | Written standard, markdownlint config, table check, and hooks                    | Markdown paths and repository-specific exclusions                     |
+| `shell`          | Written standard, shfmt, and ShellCheck definitions                              | Bash-compatible scripts, local integration, and documented exceptions |
+| `yaml`           | yamllint config and definition                                                   | YAML paths and any generated-file exclusions                          |
+| `toml`           | Taplo config and definition                                                      | One complete repository Taplo policy                                  |
+| `cargo`          | Rust formatting, shared tools, version readers, cooldown check, and updates      | Local compiler pin, tracked lockfiles, Cargo policy, and script tests |
+| `python`         | Shared tool catalog, version readers, and no-build-package check                 | Local Python projects, uv lockfiles, and any unique tool pins         |
+| `security`       | Shared tool catalog, typed audit runner, version readers, and scanner installers | Local audit policy, scanner configs, dependency files, and CI wiring  |
+| `tool-versions`  | Shared catalog and readers for Cargo, Rust, repository tools, and uv             | Local compiler pin and any unique tool pins                           |
+| `ci`             | GitHub Action pin and release cooldown checker and zizmor hook                   | Workflow paths, curl, jq, and GitHub tag/release network access       |
+| `spelling`       | Typos and Codespell hook definitions                                             | Local dictionaries, path filters, and generated-file exclusions       |
+| `secrets`        | Gitleaks hook definition                                                         | Local scanner configuration and staged Git changes                    |
+| `commit-message` | Gitlint hook definition                                                          | Local commit-message rules and installation of the commit-msg hook    |
+| `docker`         | Hadolint hook definition through the Python distribution                         | Dockerfile paths and local lint exceptions                            |
+| `mermaid`        | Mermaid lint hook definition                                                     | Markdown diagrams and a Node-capable hook environment                 |
+| `javascript`     | Prettier and npm-check-updates configuration baselines                           | Native npm manifests, lockfiles, and local commands                   |
+| `all`            | Each artifact in the manifest                                                    | Each contract above                                                   |
 
 Run the catalog command to see each artifact's default target and profile membership:
 
@@ -124,6 +130,23 @@ The renderer handles unmanaged copies of selected definitions as follows:
 - **Local variants**: It stops if a definition has the same repository or hook identity but different content.
   To keep the local variant, leave that fragment unselected. Alternatively, reconcile the difference as an
   explicit part of the adoption.
+
+The `pre-commit` profile keeps the common baseline. Add the `spelling`, `secrets`, `commit-message`,
+`docker`, or `mermaid` profile only when it applies to the consumer. Select individual artifacts when a
+consumer keeps a local wrapper or exclusions.
+The Dockerfile baseline uses `hadolint-py`; existing Docker-based hooks can remain local. Gitlint runs at
+`commit-msg`; install that hook with `prek install --hook-type commit-msg` when adopting it. Commit-message
+rules remain consumer-owned.
+
+The JavaScript profile vendors Prettier settings to `.prettierrc.yaml` and npm-check-updates policy to
+`.ncurc.json`. Before adoption, reconcile any other Prettier config file or `package.json` setting so the
+intended configuration takes effect. Install both tools through the consumer's npm manifest and lockfile.
+The baseline leaves `.nautilus-engineering/**`, `.markdownlint.jsonc`, and `.pre-commit-config.yaml`
+unchanged unless a file contains a Prettier format pragma. Exclude these paths and any other locked targets
+in `.prettierignore`, including custom targets and vendored standards. Formatting managed content breaks
+the lock hashes or rendered-section check; update that content through sync and the renderer.
+The npm-check-updates baseline sets a seven-day cooldown; keep update targets and the `--no-deprecated`
+option in consumer commands.
 
 Review the complete consumer diff, including the lock and checker. From the consumer root, verify the
 worktree copies and rendered section:
@@ -227,6 +250,12 @@ sync/sync.bash update \
 
 The shared Cargo scripts discover tracked lockfiles, update each corresponding workspace, validate paths,
 and serialize update transactions.
+
+When adopting shared Cargo tool pins, remove the matching entries from local `[workspace.metadata.tools]`
+in the same change. The version reader rejects duplicate ownership. Cargo Machete wrappers keep their local
+scan scope and missing-tool policy, and read the pin through `bash scripts/cargo-tool-version.sh cargo-machete`.
+Cargo Fuzz campaign scripts read the shared CLI pin while keeping their nightly toolchain and campaign limits
+local. Consumer installers and CI read Cargo Hack and Cargo Binstall pins through the same version reader.
 
 Run NautilusTrader's consumer tests for the cooldown checker and dependency update transaction. These tests
 must cover its lockfile layout, Cargo metadata, and local command wiring. Commit the artifacts only when the

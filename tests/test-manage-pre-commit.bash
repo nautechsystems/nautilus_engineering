@@ -352,6 +352,71 @@ else
   failures=$((failures + 1))
 fi
 
+python3 - "$REPO_ROOT" "$consumer" << 'PY'
+import hashlib
+import shutil
+import sys
+import tomllib
+from pathlib import Path
+
+root, consumer = map(Path, sys.argv[1:])
+manifest = tomllib.loads((root / "sync/manifest.toml").read_text())
+entries = []
+for artifact in manifest["artifact"]:
+    if not artifact["source"].startswith("pre-commit/"):
+        continue
+    target = consumer / artifact["target"]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(root / artifact["source"], target)
+    entries.append(
+        f'[[file]]\nartifact = "{artifact["id"]}"\n'
+        f'path = "{artifact["target"]}"\n'
+        f'sha256 = "{hashlib.sha256(target.read_bytes()).hexdigest()}"\n'
+        "executable = false\n"
+    )
+(consumer / ".nautilus-engineering.lock").write_text("\n".join(entries))
+(consumer / ".pre-commit-config.yaml").write_text(
+    "exclude: ^generated/\nrepos:\n"
+    "  - repo: local\n    hooks:\n"
+    "      - id: consumer-check\n        entry: true\n        language: system\n"
+)
+PY
+
+status=0
+output=$(cd "$consumer" && python3 "$MANAGER" render 2>&1) || status=$?
+if [[ "$status" == 0 && "$output" == *"Updated managed pre-commit section"* ]]; then
+  printf 'ok   render accepts all cataloged hook fragments together\n'
+else
+  printf 'FAIL all cataloged fragments: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+status=0
+output=$(cd "$consumer" && python3 "$MANAGER" check 2>&1) || status=$?
+if [[ "$status" == 0 && "$output" == *"matches vendored definitions"* ]] &&
+  python3 - "$REPO_ROOT" "$consumer" << 'PY'
+import sys
+import tomllib
+from pathlib import Path
+
+root, consumer = map(Path, sys.argv[1:])
+manifest = tomllib.loads((root / "sync/manifest.toml").read_text())
+config = (consumer / ".pre-commit-config.yaml").read_text()
+assert config.startswith("exclude: ^generated/\nrepos:\n"), config
+assert config.count("- id: consumer-check\n") == 1, config
+for artifact in manifest["artifact"]:
+    if not artifact["source"].startswith("pre-commit/"):
+        continue
+    fragment = (root / artifact["source"]).read_text()
+    indented = "\n".join("  " + line if line else "" for line in fragment.splitlines())
+    assert config.count(indented + "\n") == 1, artifact["id"]
+PY
+then
+  printf 'ok   every shared fragment renders once and preserves consumer settings\n'
+else
+  printf 'FAIL cataloged fragment content: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
 if ((failures > 0)); then
   printf '\n%s managed pre-commit test(s) failed\n' "$failures" >&2
   exit 1

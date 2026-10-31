@@ -21,16 +21,16 @@ on its own schedule.
 
 ## Repository map
 
-| Path          | Contents                                                                  |
-| ------------- | ------------------------------------------------------------------------- |
-| `standards/`  | Written standards for Markdown and shell scripts                          |
-| `config/`     | Baseline configuration for markdownlint, rustfmt, yamllint, and Taplo     |
-| `pre-commit/` | Repository entries rendered into managed consumer sections                |
-| `scripts/`    | Portable checks, version readers, installers, and dependency update tools |
-| `scripts/ci/` | CI tool installation, lint commands, and companion tests                  |
-| `sync/`       | The artifact catalog, vendoring command, checker, and section renderer    |
-| `docs/`       | Consumer adoption and supply-chain security guides                        |
-| `tests/`      | Focused tests for shared behavior                                         |
+| Path          | Contents                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| `standards/`  | Written standards for Markdown and shell scripts                                          |
+| `config/`     | Configuration for markdownlint, rustfmt, yamllint, Taplo, Prettier, and npm-check-updates |
+| `pre-commit/` | Repository entries rendered into managed consumer sections                                |
+| `scripts/`    | Portable checks, version readers, installers, and dependency update tools                 |
+| `scripts/ci/` | CI tool installation, lint commands, and companion tests                                  |
+| `sync/`       | The artifact catalog, vendoring command, checker, and section renderer                    |
+| `docs/`       | Consumer adoption and supply-chain security guides                                        |
+| `tests/`      | Focused tests for shared behavior                                                         |
 
 - [Markdown standard](standards/markdown.md): Markdown syntax and formatting.
 - [Shell standard](standards/shell.md): shell selection, portability, failure handling, formatting, and testing.
@@ -54,7 +54,11 @@ checkout. It never fetches, commits, or pushes either repository.
 Shared files provide a baseline rather than a complete repository policy:
 
 - The shared catalog owns pins for tools used by multiple Nautilus repositories.
+- Shared Cargo tools include Cargo Binstall, Cargo Fuzz, Cargo Hack, and Cargo Machete.
+- Optional hook profiles cover spelling, secrets, commit messages, Dockerfiles, and Mermaid diagrams.
 - Consumer `tools.toml` and Cargo metadata own pins for tools used by only that repository.
+- JavaScript manifests and lockfiles own npm tool versions. Shared Prettier and npm-check-updates
+  configurations define formatting and release-age policy.
 - Consumer `rust-toolchain.toml` files keep independent compiler pins.
 - Repository-specific pre-commit hooks, exclusions, and top-level settings remain outside the
   managed sections.
@@ -68,6 +72,8 @@ Consumers vendor configuration baselines as follows:
 - Consumers synchronize the whole Taplo configuration file because Taplo does not support cross-file
   configuration inheritance.
 - The Rust formatting baseline, `config/rustfmt.toml`, vendors to a Cargo repository's root by default.
+- The JavaScript profile provides an opt-in Prettier baseline and a seven-day npm-check-updates cooldown.
+  Consumer commands choose the update target, such as minor or latest.
 
 The root `tools.toml` catalogs shared engineering tools and this repository's validation tools.
 Consumers vendor it to `.nautilus-engineering/tools.toml`. CI reads its pins through the shared
@@ -154,6 +160,8 @@ make check-tool-updates
 
 - `releases`: the release source. `make check` verifies that every entry has this field.
 - `kind`: `"python"` or `"tool"`, which selects the cooldown independently of the release source.
+
+Scoped npm packages use `npm:@scope/name`, as in the Mermaid lint entry.
 
 The report lists each pin with its kind, latest release, release UTC timestamp, and age.
 

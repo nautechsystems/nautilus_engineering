@@ -1,0 +1,5 @@
+- repo: https://github.com/codespell-project/codespell
+  rev: v2.4.3
+  hooks:
+    - id: codespell
+      types_or: [rust, python, toml, yaml, rst, markdown, javascript]

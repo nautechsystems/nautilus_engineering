@@ -628,11 +628,39 @@ if [[ "$status" == 0 && "$output" == *"Vendored 12 artifact(s)"* ]] &&
   [[ -f "${precommit_consumer}/scripts/check-nautilus-engineering-sync.bash" ]] &&
   [[ -x "${precommit_consumer}/scripts/manage-nautilus-engineering-pre-commit.py" ]] &&
   [[ -f "${precommit_consumer}/.nautilus-engineering/pre-commit/sync.yaml" ]] &&
+  [[ ! -f "${precommit_consumer}/.nautilus-engineering/pre-commit/typos.yaml" ]] &&
+  [[ ! -f "${precommit_consumer}/.nautilus-engineering/pre-commit/codespell.yaml" ]] &&
+  [[ ! -f "${precommit_consumer}/.nautilus-engineering/pre-commit/gitleaks.yaml" ]] &&
+  [[ ! -f "${precommit_consumer}/.nautilus-engineering/pre-commit/gitlint.yaml" ]] &&
+  [[ ! -f "${precommit_consumer}/.nautilus-engineering/pre-commit/docker.yaml" ]] &&
+  [[ ! -f "${precommit_consumer}/.nautilus-engineering/pre-commit/mermaid.yaml" ]] &&
   cmp -s "${REPO_ROOT}/pre-commit/zizmor.yaml" \
     "${precommit_consumer}/.nautilus-engineering/pre-commit/zizmor.yaml"; then
   printf 'ok   pre-commit profile includes every referenced shared input\n'
 else
   printf 'FAIL pre-commit profile dependencies: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+optional_consumer="${test_root}/optional-consumer"
+mkdir "$optional_consumer"
+git -C "$optional_consumer" init --quiet
+status=0
+output=$(bash "$SYNC_SCRIPT" --source "$full_source" vendor \
+  --consumer "$optional_consumer" --profile sync --profile spelling --profile secrets \
+  --profile commit-message --profile docker --profile mermaid 2>&1) || status=$?
+if [[ "$status" == 0 ]]; then
+  for fragment in typos codespell gitleaks gitlint docker mermaid; do
+    if cmp -s "${full_source}/pre-commit/${fragment}.yaml" \
+      "${optional_consumer}/.nautilus-engineering/pre-commit/${fragment}.yaml"; then
+      printf 'ok   optional profile vendors %s on request\n' "$fragment"
+    else
+      printf 'FAIL optional profile fragment: %s\n' "$fragment" >&2
+      failures=$((failures + 1))
+    fi
+  done
+else
+  printf 'FAIL optional profiles: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
 fi
 

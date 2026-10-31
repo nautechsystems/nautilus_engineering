@@ -209,3 +209,65 @@ target = ".nautilus-engineering/pre-commit/zizmor.yaml"
 target_fixed = true
 executable = false
 profiles = ["pre-commit", "ci"]
+
+[[artifact]]
+id = "pre-commit-typos"
+source = "pre-commit/typos.yaml"
+target = ".nautilus-engineering/pre-commit/typos.yaml"
+target_fixed = true
+executable = false
+profiles = ["spelling"]
+
+[[artifact]]
+id = "pre-commit-codespell"
+source = "pre-commit/codespell.yaml"
+target = ".nautilus-engineering/pre-commit/codespell.yaml"
+target_fixed = true
+executable = false
+profiles = ["spelling"]
+
+[[artifact]]
+id = "pre-commit-gitleaks"
+source = "pre-commit/gitleaks.yaml"
+target = ".nautilus-engineering/pre-commit/gitleaks.yaml"
+target_fixed = true
+executable = false
+profiles = ["secrets"]
+
+[[artifact]]
+id = "pre-commit-gitlint"
+source = "pre-commit/gitlint.yaml"
+target = ".nautilus-engineering/pre-commit/gitlint.yaml"
+target_fixed = true
+executable = false
+profiles = ["commit-message"]
+
+[[artifact]]
+id = "pre-commit-docker"
+source = "pre-commit/docker.yaml"
+target = ".nautilus-engineering/pre-commit/docker.yaml"
+target_fixed = true
+executable = false
+profiles = ["docker"]
+
+[[artifact]]
+id = "pre-commit-mermaid"
+source = "pre-commit/mermaid.yaml"
+target = ".nautilus-engineering/pre-commit/mermaid.yaml"
+target_fixed = true
+executable = false
+profiles = ["mermaid"]
+
+[[artifact]]
+id = "prettier-config"
+source = "config/prettier.yaml"
+target = ".prettierrc.yaml"
+executable = false
+profiles = ["javascript"]
+
+[[artifact]]
+id = "npm-check-updates-config"
+source = "config/npm-check-updates.json"
+target = ".ncurc.json"
+executable = false
+profiles = ["javascript"]

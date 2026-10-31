@@ -7,7 +7,7 @@
 #     crates:NAME             crates.io latest stable version and publish time
 #     github:OWNER/REPO       latest GitHub release tag and publish time
 #     github-tags:OWNER/REPO  highest stable version tag and tag or commit time
-#     npm:NAME                npm latest dist-tag and publish time
+#     npm:NAME                npm latest dist-tag and publish time, including @scope/name
 #     pypi:NAME               PyPI latest release and upload time
 #
 # Run on demand or through `make outdated`. This is a read-only report; it does
@@ -43,7 +43,7 @@ if [[ -n "$COOLDOWN_DAYS" ]] && ! [[ "$COOLDOWN_DAYS" =~ ^[0-9]+$ ]]; then
   echo "Error: COOLDOWN_DAYS must be a non-negative integer: $COOLDOWN_DAYS" >&2
   exit 2
 fi
-RELEASE_SOURCE_PATTERN='^((crates|npm|pypi):[A-Za-z0-9][A-Za-z0-9._-]*|(github|github-tags):[A-Za-z0-9._-]+/[A-Za-z0-9._-]+)$'
+RELEASE_SOURCE_PATTERN='^((crates|pypi):[A-Za-z0-9][A-Za-z0-9._-]*|npm:(@[A-Za-z0-9][A-Za-z0-9._-]*/)?[A-Za-z0-9][A-Za-z0-9._-]*|(github|github-tags):[A-Za-z0-9._-]+/[A-Za-z0-9._-]+)$'
 JQ_EPOCH_DEF='def epoch: sub("\\+00:00$"; "Z") | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;'
 # shellcheck disable=SC2016  # $a and $b are jq parameters
 JQ_VERSION_DEF='
@@ -179,6 +179,7 @@ release_info() {
       github_tag_release "$package" "$pinned" "$cutoff_epoch"
       ;;
     npm)
+      package=${package/\//%2f}
       fetch_json "https://registry.npmjs.org/${package}" |
         jq -r --argjson cutoff "$cutoff_epoch" --arg pinned "$pinned" '
           '"${JQ_EPOCH_DEF}${JQ_VERSION_DEF}"'

@@ -1,0 +1,11 @@
+trailingComma: es5
+tabWidth: 2
+semi: false
+singleQuote: true
+overrides:
+  - files:
+      - .pre-commit-config.yaml
+      - .nautilus-engineering/**
+      - .markdownlint.jsonc
+    options:
+      requirePragma: true

@@ -84,7 +84,9 @@ case "$url" in
       "$version" "$released" "$releases"
     ;;
   https://registry.npmjs.org/*)
-    package="${url##*/}"
+    package="${url#https://registry.npmjs.org/}"
+    [[ "$package" != */* ]] || exit 22
+    package=${package/\%2f/\/}
     version="$(latest_version npm "$package")"
     released="$(latest_released npm "$package")"
     [[ -n "$version" && -n "$released" ]] || exit 22
@@ -713,6 +715,35 @@ expect_report "unsupported release source fails the report" 1 \
   "zeta                 tool           1.0.0        INVALID RELEASE SOURCE" \
   "FAIL: invalid catalog entries (1)" \
   "zeta: unsupported release source svn:zeta"
+
+write_catalog
+write_fixture
+cat >> "${test_root}/tools.toml" << 'TOML'
+
+[mermaid-lint]
+kind = "tool"
+version = "0.35.0"
+releases = "npm:@mermaid-lint/cli"
+TOML
+printf 'npm @mermaid-lint/cli 0.54.0 %s 0.53.1 %s\n' \
+  "$recent_release" "$older_release" >> "$fixture"
+expect_report "scoped npm lookup selects the mature upgrade target" 1 \
+  "mermaid-lint         tool           0.35.0       0.54.0" \
+  "mermaid-lint 0.35.0 -> 0.53.1 (latest 0.54.0 within cooldown)"
+expect_absent "scoped npm lookup succeeds" "LOOKUP FAILED"
+
+for source in npm:@scope npm:scope/name npm:@/name npm:@scope/ npm:@scope/name/extra; do
+  write_catalog
+  cat >> "${test_root}/tools.toml" << TOML
+
+[zeta]
+kind = "tool"
+version = "1.0.0"
+releases = "${source}"
+TOML
+  expect_report "invalid scoped npm source ${source}" 1 \
+    "zeta: unsupported release source ${source}"
+done
 
 write_catalog
 cat >> "${test_root}/tools.toml" << 'TOML'

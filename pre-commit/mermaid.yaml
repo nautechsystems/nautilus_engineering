@@ -1,0 +1,10 @@
+- repo: local
+  hooks:
+    - id: mermaid-lint
+      name: mermaid lint
+      entry: mermaid-lint
+      language: node
+      additional_dependencies:
+        - "@mermaid-lint/cli@0.53.1"
+      args: [--no-semantic, --quiet]
+      types: [markdown]

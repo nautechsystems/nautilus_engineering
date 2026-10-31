@@ -236,7 +236,40 @@ version = "1.0.0"
 TOML
 expect_failure "missing release source" "[delta].releases must be"
 
-for source in svn:delta github:delta crates:owner/delta "pypi:delta name"; do
+write_catalog 0.22.2
+write_config v1.2.3
+write_fragment
+cat >> "${test_root}/tools.toml" << 'TOML'
+
+[mermaid-lint]
+kind = "tool"
+version = "0.53.1"
+releases = "npm:@mermaid-lint/cli"
+pre-commit-dependency = "@mermaid-lint/cli@{version}"
+pre-commit-hooks = ["mermaid-lint"]
+pre-commit-fragment = "pre-commit/mermaid.yaml"
+TOML
+cat > "${test_root}/pre-commit/mermaid.yaml" << 'YAML'
+- repo: local
+  hooks:
+    - id: mermaid-lint
+      entry: mermaid-lint
+      language: node
+      additional_dependencies:
+        - "@mermaid-lint/cli@0.53.1"
+YAML
+awk '{print "  " $0}' "${test_root}/pre-commit/mermaid.yaml" >> "${test_root}/.pre-commit-config.yaml"
+expect_success "scoped npm release and hook dependency"
+sed 's/@mermaid-lint\/cli@0.53.1/@mermaid-lint\/cli@0.35.0/' \
+  "${test_root}/pre-commit/mermaid.yaml" > "${test_root}/fragment.tmp"
+mv "${test_root}/fragment.tmp" "${test_root}/pre-commit/mermaid.yaml"
+expect_failure "scoped npm dependency drift in fragment" \
+  "missing @mermaid-lint/cli@0.53.1 from tools.toml [mermaid-lint]"
+rm "${test_root}/pre-commit/mermaid.yaml"
+write_config v1.2.3
+
+for source in svn:delta github:delta crates:owner/delta "pypi:delta name" \
+  npm:@scope npm:scope/name npm:@/name npm:@scope/ npm:@scope/name/extra pypi:@scope/name; do
   write_catalog 0.22.2
   cat >> "${test_root}/tools.toml" << TOML
 

@@ -33,7 +33,8 @@ DEPENDENCIES_ALIAS_LINE = re.compile(r"^\s*additional_dependencies:\s*\*([^\s#]+
 DEPENDENCY_LINE = re.compile(r"^\s*-\s+([^\s#]+)")
 STABLE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 RELEASE_SOURCE = re.compile(
-    r"(?:crates|npm|pypi):[A-Za-z0-9][A-Za-z0-9._-]*"
+    r"(?:crates|pypi):[A-Za-z0-9][A-Za-z0-9._-]*"
+    r"|npm:(?:@[A-Za-z0-9][A-Za-z0-9._-]*/)?[A-Za-z0-9][A-Za-z0-9._-]*"
     r"|(?:github|github-tags):[A-Za-z0-9._-]+/[A-Za-z0-9._-]+",
 )
 SECURITY_TOOLS = frozenset(

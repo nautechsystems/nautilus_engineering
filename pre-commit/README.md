@@ -10,9 +10,9 @@ settings outside those regions.
 See the [consumer adoption guide](../docs/consumer-adoption.md) for the complete procedure, including profile
 selection, rendering, staged checks, and conflict handling.
 
-Vendor the `pre-commit` profile for all shared pre-commit definitions. For a narrower adoption,
-pair the selected definition artifacts with the `sync` profile. From the consumer root, render the managed
-content:
+Vendor the `pre-commit` profile for the common baseline. Add the `spelling`, `secrets`, `commit-message`,
+`docker`, or `mermaid` profile only when it applies to the consumer. For an adoption that selects individual
+definition artifacts, pair them with the `sync` profile. From the consumer root, render the managed content:
 
 ```bash
 python3 scripts/manage-nautilus-engineering-pre-commit.py render
