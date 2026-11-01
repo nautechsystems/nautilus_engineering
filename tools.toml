@@ -84,7 +84,7 @@ releases = "crates:cargo-audit"
 
 [cargo-binstall]
 kind = "tool"
-version = "1.16.4"
+version = "1.26.1"
 releases = "crates:cargo-binstall"
 
 [cargo-deny]
