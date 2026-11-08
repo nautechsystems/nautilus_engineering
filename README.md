@@ -21,16 +21,16 @@ on its own schedule.
 
 ## Repository map
 
-| Path          | Contents                                                                                  |
-| ------------- | ----------------------------------------------------------------------------------------- |
-| `standards/`  | Written standards for Markdown and shell scripts                                          |
-| `config/`     | Configuration for markdownlint, rustfmt, yamllint, Taplo, Prettier, and npm-check-updates |
-| `pre-commit/` | Repository entries rendered into managed consumer sections                                |
-| `scripts/`    | Portable checks, version readers, installers, and dependency update tools                 |
-| `scripts/ci/` | CI tool installation, lint commands, and companion tests                                  |
-| `sync/`       | The artifact catalog, vendoring command, checker, and section renderer                    |
-| `docs/`       | Consumer adoption and supply-chain security guides                                        |
-| `tests/`      | Focused tests for shared behavior                                                         |
+| Path          | Contents                                                                                     |
+| ------------- | -------------------------------------------------------------------------------------------- |
+| `standards/`  | Written standards for Markdown and shell scripts                                             |
+| `config/`     | Configuration for markdownlint, rustfmt, yamllint, Taplo, Prettier, and npm-check-updates    |
+| `pre-commit/` | Repository entries rendered into managed consumer sections                                   |
+| `scripts/`    | Portable checks, Python formatting, version readers, installers, and dependency update tools |
+| `scripts/ci/` | CI tool installation, lint commands, and companion tests                                     |
+| `sync/`       | The artifact catalog, vendoring command, checker, and section renderer                       |
+| `docs/`       | Consumer adoption and supply-chain security guides                                           |
+| `tests/`      | Focused tests for shared behavior                                                            |
 
 - [Markdown standard](standards/markdown.md): Markdown syntax and formatting.
 - [Shell standard](standards/shell.md): shell selection, portability, failure handling, formatting, and testing.
@@ -78,6 +78,20 @@ Consumers vendor configuration baselines as follows:
 The root `tools.toml` catalogs shared engineering tools and this repository's validation tools.
 Consumers vendor it to `.nautilus-engineering/tools.toml`. CI reads its pins through the shared
 version scripts, and `make check` verifies that matching pre-commit pins stay aligned.
+
+## Python formatting
+
+`make format` runs the cataloged Ruff release, then `scripts/format-python.py` for statement spacing.
+`make check-formatting` checks both passes without changing files. Pre-commit applies both passes,
+and the Python CI lint job checks them.
+
+The Ruff configuration enables E301 through E306 for definition spacing. The statement pass separates
+control flow and multiline literal or constructor assignments, while keeping related statements together.
+It preserves source tokens, comments, strings, encodings, and LF or CRLF endings. Ruff exclusions and
+Git ignore rules control discovery; generated directories, stub directories, and symlinks stay excluded.
+
+The `python` sync profile includes the formatter and its pinned Ruff runner. See the
+[Python consumer setup](docs/consumer-adoption.md#python-formatting) for integration.
 
 ## Maintainer checks
 

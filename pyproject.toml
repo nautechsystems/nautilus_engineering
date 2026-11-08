@@ -3,7 +3,10 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
+preview = true
+explicit-preview-rules = true
 select = ["ALL"]
+extend-select = ["E301", "E302", "E303", "E304", "E305", "E306"]
 
 ignore = [
   "COM812", # Ruff formatter controls trailing commas

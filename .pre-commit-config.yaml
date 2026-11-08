@@ -30,6 +30,14 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  - repo: local
+    hooks:
+      - id: python-statement-spacing
+        name: Python statement spacing
+        entry: bash scripts/format-python.bash --fix
+        language: system
+        types: [python]
+
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.14.1-1
     hooks:

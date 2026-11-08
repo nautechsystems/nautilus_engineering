@@ -32,6 +32,7 @@ case "$1" in
   python)
     ruff check "${files[@]}"
     ruff format --check "${files[@]}"
+    python3 -B scripts/format-python.py --check "${files[@]}"
     ;;
   markdown)
     markdownlint_version=$(bash scripts/tool-version.sh markdownlint-cli2)

@@ -271,3 +271,19 @@ source = "config/npm-check-updates.json"
 target = ".ncurc.json"
 executable = false
 profiles = ["javascript"]
+
+[[artifact]]
+id = "python-formatter"
+source = "scripts/format-python.py"
+target = "scripts/format-python.py"
+target_fixed = true
+executable = true
+profiles = ["python"]
+
+[[artifact]]
+id = "python-formatter-runner"
+source = "scripts/format-python.bash"
+target = "scripts/format-python.bash"
+target_fixed = true
+executable = true
+profiles = ["python"]

@@ -121,6 +121,7 @@ def run_git(repo: Path, *args: str, text: bool = True) -> str | bytes:
         check=False,
         text=text,
     )
+
     if process.returncode != 0:
         detail = process.stderr.strip() if text else process.stderr.decode().strip()
         raise SyncError(detail or f"git {' '.join(args)} failed in {repo}")
@@ -130,6 +131,7 @@ def run_git(repo: Path, *args: str, text: bool = True) -> str | bytes:
 def validate_path(value: object, label: str) -> str:
     if not isinstance(value, str) or not value:
         raise SyncError(f"{label} must be a non-empty string")
+
     if any(character not in PATH_CHARACTERS for character in value):
         raise SyncError(f"{label} contains an unsupported character: {value!r}")
     path = pathlib.PurePosixPath(value)
@@ -139,8 +141,10 @@ def validate_path(value: object, label: str) -> str:
         or any(part in ("", ".", "..") for part in path.parts)
     ):
         raise SyncError(f"{label} must be a normalized repository-relative path: {value}")
+
     for part in path.parts:
         part_folded = part.casefold()
+
         if (
             part_folded == ".git"
             or part.startswith("-")
@@ -175,9 +179,11 @@ def load_manifest(  # noqa: C901, PLR0912, PLR0915
 
     if set(data) != {"version", "repository", "lock_file", "marker_file", "artifact"}:
         raise SyncError("manifest has invalid top-level fields")
+
     if data.get("version") != 1:
         raise SyncError("manifest version must be 1")
     repository = data.get("repository")
+
     if (
         not isinstance(repository, str)
         or re.fullmatch(r"https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", repository) is None
@@ -187,6 +193,7 @@ def load_manifest(  # noqa: C901, PLR0912, PLR0915
     marker_file = validate_path(data.get("marker_file"), "marker_file")
     if paths_overlap(lock_file, marker_file):
         raise SyncError("lock_file and marker_file paths overlap")
+
     for managed_path, label in ((lock_file, "lock_file"), (marker_file, "marker_file")):
         managed_root = pathlib.PurePosixPath(managed_path).parts[0]
         if paths_overlap(managed_path, PROCESS_LOCK_FILE) or managed_root.casefold().startswith(
@@ -201,6 +208,7 @@ def load_manifest(  # noqa: C901, PLR0912, PLR0915
     artifacts: list[Artifact] = []
     ids: set[str] = set()
     targets: set[str] = set()
+
     for index, entry in enumerate(raw_artifacts):
         if not isinstance(entry, dict):
             raise SyncError(f"artifact {index} must be a table")
@@ -211,6 +219,7 @@ def load_manifest(  # noqa: C901, PLR0912, PLR0915
         artifact_id = entry.get("id")
         if not isinstance(artifact_id, str) or re.fullmatch(r"[A-Za-z0-9-]+", artifact_id) is None:
             raise SyncError(f"artifact {index} has an invalid id")
+
         if artifact_id in ids:
             raise SyncError(f"duplicate artifact id: {artifact_id}")
         ids.add(artifact_id)
@@ -226,6 +235,7 @@ def load_manifest(  # noqa: C901, PLR0912, PLR0915
         if not isinstance(executable, bool):
             raise SyncError(f"{artifact_id}.executable must be true or false")
         profiles = entry.get("profiles")
+
         if (
             not isinstance(profiles, list)
             or not profiles
@@ -235,6 +245,7 @@ def load_manifest(  # noqa: C901, PLR0912, PLR0915
             )
         ):
             raise SyncError(f"{artifact_id}.profiles must be a non-empty array of profile ids")
+
         if len(set(profiles)) != len(profiles):
             raise SyncError(f"{artifact_id}.profiles contains a duplicate")
         artifacts.append(
@@ -259,10 +270,12 @@ def source_revision(source: Path) -> str:
 
 def parse_target_overrides(values: list[str]) -> dict[str, str]:
     overrides: dict[str, str] = {}
+
     for value in values:
         artifact_id, separator, target = value.partition("=")
         if not separator or not artifact_id or not target:
             raise SyncError(f"target override must be ARTIFACT=PATH: {value}")
+
         if artifact_id in overrides:
             raise SyncError(f"duplicate target override: {artifact_id}")
         overrides[artifact_id] = validate_path(target, f"target for {artifact_id}")
@@ -299,6 +312,7 @@ def select_artifacts(  # noqa: C901, PLR0912
         for artifact in manifest.artifacts:
             if set(profiles).intersection(artifact.profiles):
                 selected_ids.add(artifact.id)
+
     if not selected_ids:
         raise SyncError("select at least one --profile or --artifact")
     unused_overrides = sorted(set(overrides) - selected_ids)
@@ -316,14 +330,17 @@ def select_artifacts(  # noqa: C901, PLR0912
         target = overrides.get(artifact.id, artifact.target)
         if artifact.target_fixed and target != artifact.target:
             raise SyncError(f"artifact {artifact.id} target cannot be overridden: {target}")
+
         if pathlib.PurePosixPath(target).parts[0].casefold().startswith(TEMP_PREFIX):
             raise SyncError(f"artifact {artifact.id} uses a reserved temporary path: {target}")
+
         for reserved_path in reserved:
             if paths_overlap(target, reserved_path):
                 raise SyncError(
                     f"artifact {artifact.id} target overlaps reserved path "
                     f"{reserved_path}: {target}",
                 )
+
         for existing_target, existing_id in targets:
             if paths_overlap(target, existing_target):
                 raise SyncError(
@@ -367,6 +384,7 @@ def reject_symlink_path(root: Path, relative: str) -> None:
         current = current / part
         if current.is_symlink():
             raise SyncError(f"managed path traverses a symlink: {relative}")
+
         if index < len(parts) - 1 and current.exists() and not current.is_dir():
             raise SyncError(f"managed path parent is not a directory: {relative}")
 
@@ -378,12 +396,14 @@ def load_locked_selection(  # noqa: C901, PLR0912
 ) -> LockedSelection | None:
     if not lock_path.exists():
         return None
+
     if lock_path.is_symlink() or not lock_path.is_file():
         raise SyncError(f"existing lock is not a regular file: {lock_path}")
     try:
         data = tomllib.loads(lock_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         raise SyncError(f"cannot read existing sync lock: {exc}") from exc
+
     required_keys = {
         "version",
         "repository",
@@ -393,22 +413,28 @@ def load_locked_selection(  # noqa: C901, PLR0912
         "profiles",
         "file",
     }
+
     if set(data) != required_keys or data.get("version") != 1:
         raise SyncError("existing sync lock has invalid top-level fields")
+
     if data.get("repository") != manifest.repository:
         raise SyncError("existing sync lock names another source repository")
     revision = data.get("revision")
     manifest_hash = data.get("manifest_sha256")
+
     if (
         not isinstance(revision, str)
         or re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", revision) is None
     ):
         raise SyncError("existing sync lock has an invalid revision")
+
     if not isinstance(manifest_hash, str) or re.fullmatch(r"[0-9a-f]{64}", manifest_hash) is None:
         raise SyncError("existing sync lock has an invalid manifest hash")
+
     if data.get("marker_file") != manifest.marker_file:
         raise SyncError("existing sync lock has an unexpected marker path")
     profiles = data.get("profiles")
+
     if (
         not isinstance(profiles, list)
         or not all(
@@ -424,6 +450,7 @@ def load_locked_selection(  # noqa: C901, PLR0912
     locked_files: list[LockedFile] = []
     path_values: list[str] = []
     artifacts: set[str] = set()
+
     for entry in files:
         if not isinstance(entry, dict) or set(entry) != {
             "artifact",
@@ -435,14 +462,17 @@ def load_locked_selection(  # noqa: C901, PLR0912
         artifact = entry.get("artifact")
         file_hash = entry.get("sha256")
         executable = entry.get("executable")
+
         if (
             not isinstance(artifact, str)
             or re.fullmatch(r"[A-Za-z0-9-]+", artifact) is None
             or artifact in artifacts
         ):
             raise SyncError("existing sync lock contains an invalid artifact id")
+
         if not isinstance(file_hash, str) or re.fullmatch(r"[0-9a-f]{64}", file_hash) is None:
             raise SyncError(f"existing sync lock has an invalid hash for {artifact}")
+
         if not isinstance(executable, bool):
             raise SyncError(f"existing sync lock has an invalid mode for {artifact}")
         path = validate_path(entry.get("path"), "existing lock path")
@@ -451,6 +481,7 @@ def load_locked_selection(  # noqa: C901, PLR0912
             for reserved in (manifest.lock_file, manifest.marker_file, PROCESS_LOCK_FILE)
         ) or pathlib.PurePosixPath(path).parts[0].casefold().startswith(TEMP_PREFIX):
             raise SyncError(f"existing sync lock contains a reserved path: {path}")
+
         if any(paths_overlap(path, existing) for existing in path_values):
             raise SyncError(f"existing sync lock contains overlapping paths: {path}")
         artifacts.add(artifact)
@@ -475,6 +506,7 @@ def render_lock(
         f"profiles = {json.dumps(sorted(set(profiles)))}",
         "",
     ]
+
     for item in sorted(selected, key=lambda entry: entry.target):
         lines.extend(
             [
@@ -524,6 +556,7 @@ def install_files(  # noqa: C901, PLR0915
             )
         temp_dir = Path(tempfile.mkdtemp(prefix=TEMP_PREFIX, dir=consumer))
         staged: list[tuple[SelectedFile, Path]] = []
+
         for index, item in enumerate(selected):
             temp_path = temp_dir / str(index)
             temp_path.write_bytes(item.content)
@@ -552,6 +585,7 @@ def install_files(  # noqa: C901, PLR0915
             backup = temp_dir / "previous" / item.target
             replacement = Replacement(destination, temp_path, backup)
             replacements.append(replacement)
+
             if destination.exists():
                 backup.parent.mkdir(parents=True, exist_ok=True)
                 destination.replace(backup)
@@ -590,6 +624,7 @@ def install_files(  # noqa: C901, PLR0915
 
 def restore_files(replacements: list[Replacement]) -> None:
     failures = []
+
     for replacement in reversed(replacements):
         try:
             if replacement.backup.exists():
@@ -598,6 +633,7 @@ def restore_files(replacements: list[Replacement]) -> None:
                 replacement.destination.unlink()
         except OSError as exc:
             failures.append(f"{replacement.destination}: {exc}")
+
     if failures:
         raise SyncError("; ".join(failures))
 
@@ -611,11 +647,13 @@ def command_list(manifest: Manifest) -> None:
     profiles = sorted({profile for artifact in manifest.artifacts for profile in artifact.profiles})
     _write("Profiles:")
     _write("  all")
+
     for profile in profiles:
         _write(f"  {profile}")
     _write("\nArtifacts:")
     target_width = max(len(artifact.target) for artifact in manifest.artifacts)
     _write(f"  {'ID':<28} {'Target':<{target_width}} Profiles")
+
     for artifact in manifest.artifacts:
         memberships = ", ".join(artifact.profiles)
         _write(f"  {artifact.id:<28} {artifact.target:<{target_width}} {memberships}")
@@ -631,6 +669,7 @@ def command_vendor(
     overrides = parse_target_overrides(args.target)
     choices = select_artifacts(manifest, args.profile, args.artifact, overrides)
     selected: list[SelectedFile] = []
+
     for artifact, target in choices:
         content = committed_file(source, revision, artifact)
         selected.append(
@@ -648,8 +687,10 @@ def command_vendor(
     _write(f"Vendored {len(selected)} artifact(s) from {revision}")
     for item in selected:
         _write(f"  {item.artifact.id}: {item.target}")
+
     if stale_paths:
         _write("Previously managed paths left unchanged and removed from the lock:")
+
         for path in sorted(stale_paths):
             _write(f"  {path}")
 
@@ -685,6 +726,7 @@ def command_update(
     targets.update(added_targets)
     choices = select_artifacts(manifest, [], artifact_ids, targets)
     selected: list[SelectedFile] = []
+
     for artifact, target in choices:
         content = committed_file(source, revision, artifact)
         selected.append(

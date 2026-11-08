@@ -17,7 +17,8 @@ printf '#!/usr/bin/env bash\n' > "$fixture/scripts/script with space.bash"
 printf '#!/usr/bin/env bash\n' > "$fixture/sync/sample.sh"
 printf '#!/usr/bin/env bash\n' > "$fixture/tests/test-example.bash"
 touch "$fixture/config/rustfmt.toml" "$fixture/config/taplo.toml" \
-  "$fixture/pyproject.toml" "$fixture/sync/manifest.toml" "$fixture/scripts/check-markdown-tables.py"
+  "$fixture/pyproject.toml" "$fixture/sync/manifest.toml" "$fixture/scripts/check-markdown-tables.py" \
+  "$fixture/scripts/format-python.py"
 git -C "$fixture" init --quiet
 real_git=$(command -v git)
 real_python=$(command -v python3)
@@ -42,7 +43,7 @@ for tool in shellcheck ruff npx taplo python3; do
 #!/usr/bin/env bash
 set -euo pipefail
 tool=${0##*/}
-if [[ "$tool" == python3 && "${2:-}" != scripts/check-markdown-tables.py ]]; then
+if [[ "$tool" == python3 && "${2:-}" != scripts/check-markdown-tables.py && "${2:-}" != scripts/format-python.py ]]; then
   exec "$REAL_PYTHON" "$@"
 fi
 printf '%s\0' "$tool" "$@" '' >> "$COMMAND_LOG"
@@ -82,7 +83,8 @@ mode = sys.argv[3]
 paths = {
     "shell": ["scripts/ci/lint-files.bash", "scripts/script with space.bash",
               "scripts/tool-version.sh", "sync/sample.sh", "tests/test-example.bash"],
-    "python": ["module with space.py", "scripts/check-markdown-tables.py", "scripts/run-make-check.py"],
+    "python": ["module with space.py", "scripts/check-markdown-tables.py", "scripts/format-python.py",
+               "scripts/run-make-check.py"],
     "markdown": ["readme with space.md"],
     "toml": ["config/rustfmt.toml", "config/taplo.toml", "pyproject.toml",
              "sync/manifest.toml", "tools.toml"],
@@ -90,7 +92,8 @@ paths = {
 files = paths if mode == "toml" else [str(root / path) for path in sorted(paths)]
 commands = {
     "shell": [["shellcheck", *files], ["shfmt", "-d", "-i", "2", "-ci", "-sr", "-ln", "bash", *files]],
-    "python": [["ruff", "check", *files], ["ruff", "format", "--check", *files]],
+    "python": [["ruff", "check", *files], ["ruff", "format", "--check", *files],
+               ["python3", "-B", "scripts/format-python.py", "--check", *files]],
     "markdown": [["npx", "--yes", "markdownlint-cli2@7.8.9", "--config", "config/markdownlint.jsonc", *files],
                  ["python3", "-B", "scripts/check-markdown-tables.py", *files]],
     "toml": [["taplo", "format", "--check", "--config", "config/taplo.toml", *files],
@@ -133,6 +136,17 @@ expected = Path(sys.argv[2]).read_bytes().split(b"\0\0")[0] + b"\0\0"
 assert actual == expected, actual
 PY
   FAIL_TOOL="$second_tool" FAIL_ARGUMENT="$second_argument" run_lint 37 "$mode"
+  if [[ "$mode" == python ]]; then
+    "$real_python" - "$COMMAND_LOG" "$test_root/expected" << 'PYTHON'
+from pathlib import Path
+import sys
+
+actual = Path(sys.argv[1]).read_bytes()
+expected = b"\0\0".join(Path(sys.argv[2]).read_bytes().split(b"\0\0")[:2]) + b"\0\0"
+assert actual == expected, actual
+PYTHON
+    FAIL_TOOL=python3 run_lint 37 "$mode"
+  fi
   cmp "$COMMAND_LOG" "$test_root/expected"
   if [[ "$mode" != toml ]]; then
     FAIL_DISCOVERY=1 run_lint 53 "$mode"

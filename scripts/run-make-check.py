@@ -24,6 +24,7 @@ from pathlib import Path
 __all__: tuple[str, ...] = ()
 
 ROOT = Path(__file__).resolve().parent.parent
+
 INVENTORIES = {
     "python": ("PYTHON_FILES", ["*.py"], (b".py",)),
     "shell": ("SHELL_FILES", ["scripts", "sync", "tests"], (b".bash", b".sh")),
@@ -65,6 +66,7 @@ def run_check(kind: str, origin: str) -> None:
     """Run the selected checks, isolating test children from commit-hook Git variables."""
     files = selected_files(kind, origin)
     environment = os.environ.copy()
+
     if kind == "test":
         result = subprocess.run(
             ["git", "rev-parse", "--local-env-vars"],  # noqa: S607 - Git is required
@@ -72,14 +74,17 @@ def run_check(kind: str, origin: str) -> None:
             stdout=subprocess.PIPE,
             check=True,
         )
+
         for name in result.stdout.decode("ascii").splitlines():
             environment.pop(name, None)
+
     if kind == "python":
         commands = [["python3", "-m", "py_compile", *files]]
     elif kind == "action":
         commands = [["bash", "scripts/check-github-actions.sh", *files]]
     else:
         commands = [["bash", *(["-n"] if kind == "shell" else []), path] for path in files]
+
     for command in commands:
         if kind == "test":
             sys.stdout.write(f"\nRunning {command[-1]}\n")
@@ -114,6 +119,7 @@ def selected_files(kind: str, origin: str) -> list[str]:
             for path in sorted(paths)
             if path.endswith(suffixes) and (kind != "test" or b"/test-" in path)
         ]
+
     if not files:
         raise ValueError(f"No {kind} files selected")
     # A leading dash must stay a filename when passed to an interpreter.

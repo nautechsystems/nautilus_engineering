@@ -1,5 +1,6 @@
 SHELL := bash
 
+RUFF := uvx --from ruff==$(shell bash scripts/tool-version.sh ruff)
 PREK := uvx --from prek==$(shell bash scripts/tool-version.sh prek) prek
 # The runner discovers NUL-delimited paths unless a caller explicitly overrides a list.
 export PYTHON_FILES :=
@@ -7,9 +8,17 @@ export SHELL_FILES :=
 export TEST_FILES :=
 export ACTION_FILES :=
 
-.PHONY: adoption-status check check-github-action-pins check-python check-shell check-tool-pins check-tool-updates outdated pre-commit pre-flight test
+.PHONY: adoption-status check check-github-action-pins check-python check-shell check-tool-pins check-tool-updates outdated pre-commit pre-flight test format check-formatting
 
 check: check-python check-shell check-tool-pins test
+
+format:
+	$(RUFF) ruff format .
+	bash scripts/format-python.bash --fix .
+
+check-formatting:
+	$(RUFF) ruff format --check .
+	bash scripts/format-python.bash --check .
 
 check-python:
 	python3 -B scripts/run-make-check.py python '$(origin PYTHON_FILES)'

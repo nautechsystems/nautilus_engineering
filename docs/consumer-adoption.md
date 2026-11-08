@@ -42,26 +42,26 @@ from those profiles and copies each overlapping artifact once.
 Pair a functional profile with `sync` so the consumer receives the lock checker and the managed
 pre-commit checks. The `pre-commit` profile already includes `sync`.
 
-| Profile          | Shared files selected                                                            | Consumer contract                                                     |
-| ---------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `pre-commit`     | Hook definitions, lint configs, Markdown table check, renderer, and sync check   | Existing config with one `repos:` key                                 |
-| `sync`           | Lock checker, sync hook definition, and renderer                                 | Pre-commit config or equivalent unconditional local and CI wiring     |
-| `markdown`       | Written standard, markdownlint config, table check, and hooks                    | Markdown paths and repository-specific exclusions                     |
-| `shell`          | Written standard, shfmt, and ShellCheck definitions                              | Bash-compatible scripts, local integration, and documented exceptions |
-| `yaml`           | yamllint config and definition                                                   | YAML paths and any generated-file exclusions                          |
-| `toml`           | Taplo config and definition                                                      | One complete repository Taplo policy                                  |
-| `cargo`          | Rust formatting, shared tools, version readers, cooldown check, and updates      | Local compiler pin, tracked lockfiles, Cargo policy, and script tests |
-| `python`         | Shared tool catalog, version readers, and no-build-package check                 | Local Python projects, uv lockfiles, and any unique tool pins         |
-| `security`       | Shared tool catalog, typed audit runner, version readers, and scanner installers | Local audit policy, scanner configs, dependency files, and CI wiring  |
-| `tool-versions`  | Shared catalog and readers for Cargo, Rust, repository tools, and uv             | Local compiler pin and any unique tool pins                           |
-| `ci`             | GitHub Action pin and release cooldown checker and zizmor hook                   | Workflow paths, curl, jq, and GitHub tag/release network access       |
-| `spelling`       | Typos and Codespell hook definitions                                             | Local dictionaries, path filters, and generated-file exclusions       |
-| `secrets`        | Gitleaks hook definition                                                         | Local scanner configuration and staged Git changes                    |
-| `commit-message` | Gitlint hook definition                                                          | Local commit-message rules and installation of the commit-msg hook    |
-| `docker`         | Hadolint hook definition through the Python distribution                         | Dockerfile paths and local lint exceptions                            |
-| `mermaid`        | Mermaid lint hook definition                                                     | Markdown diagrams and a Node-capable hook environment                 |
-| `javascript`     | Prettier and npm-check-updates configuration baselines                           | Native npm manifests, lockfiles, and local commands                   |
-| `all`            | Each artifact in the manifest                                                    | Each contract above                                                   |
+| Profile          | Shared files selected                                                              | Consumer contract                                                     |
+| ---------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `pre-commit`     | Hook definitions, lint configs, Markdown table check, renderer, and sync check     | Existing config with one `repos:` key                                 |
+| `sync`           | Lock checker, sync hook definition, and renderer                                   | Pre-commit config or equivalent unconditional local and CI wiring     |
+| `markdown`       | Written standard, markdownlint config, table check, and hooks                      | Markdown paths and repository-specific exclusions                     |
+| `shell`          | Written standard, shfmt, and ShellCheck definitions                                | Bash-compatible scripts, local integration, and documented exceptions |
+| `yaml`           | yamllint config and definition                                                     | YAML paths and any generated-file exclusions                          |
+| `toml`           | Taplo config and definition                                                        | One complete repository Taplo policy                                  |
+| `cargo`          | Rust formatting, shared tools, version readers, cooldown check, and updates        | Local compiler pin, tracked lockfiles, Cargo policy, and script tests |
+| `python`         | Python formatter, shared tool catalog, version readers, and no-build-package check | Local Python projects, uv lockfiles, and any unique tool pins         |
+| `security`       | Shared tool catalog, typed audit runner, version readers, and scanner installers   | Local audit policy, scanner configs, dependency files, and CI wiring  |
+| `tool-versions`  | Shared catalog and readers for Cargo, Rust, repository tools, and uv               | Local compiler pin and any unique tool pins                           |
+| `ci`             | GitHub Action pin and release cooldown checker and zizmor hook                     | Workflow paths, curl, jq, and GitHub tag/release network access       |
+| `spelling`       | Typos and Codespell hook definitions                                               | Local dictionaries, path filters, and generated-file exclusions       |
+| `secrets`        | Gitleaks hook definition                                                           | Local scanner configuration and staged Git changes                    |
+| `commit-message` | Gitlint hook definition                                                            | Local commit-message rules and installation of the commit-msg hook    |
+| `docker`         | Hadolint hook definition through the Python distribution                           | Dockerfile paths and local lint exceptions                            |
+| `mermaid`        | Mermaid lint hook definition                                                       | Markdown diagrams and a Node-capable hook environment                 |
+| `javascript`     | Prettier and npm-check-updates configuration baselines                             | Native npm manifests, lockfiles, and local commands                   |
+| `all`            | Each artifact in the manifest                                                      | Each contract above                                                   |
 
 Run the catalog command to see each artifact's default target and profile membership:
 
@@ -165,6 +165,49 @@ python3 scripts/manage-nautilus-engineering-pre-commit.py check --staged
 
 Run the consumer's focused integration tests for each adopted check. Run its full pre-commit gate
 when the adoption changes managed hook definitions.
+
+## Python formatting
+
+The `python` profile vendors `scripts/format-python.py`, its Bash runner, the shared tool catalog,
+and version readers. Install uv and use Python 3.12 or later. The runner provisions the cataloged
+Ruff release without installing project dependencies.
+
+Keep Ruff policy in the consumer. The formatter uses `python/pyproject.toml` when present, otherwise
+root `pyproject.toml`. Enable definition-spacing checks in that file:
+
+```toml
+[tool.ruff.lint]
+preview = true
+explicit-preview-rules = true
+extend-select = ["E301", "E302", "E303", "E304", "E305", "E306"]
+```
+
+Run Ruff formatting before statement spacing. Add this consumer-owned hook after its Ruff formatter:
+
+```yaml
+- repo: local
+  hooks:
+    - id: python-statement-spacing
+      name: Python statement spacing
+      entry: bash scripts/format-python.bash --fix
+      language: system
+      types: [python]
+```
+
+Run the statement pass over all Python sources, including examples and tutorials:
+
+```bash
+bash scripts/format-python.bash --fix .
+bash scripts/format-python.bash --check .
+```
+
+Add the check command after Ruff's format check in CI. File selection follows the consumer's Ruff
+exclusions and Git ignore rules. The statement pass also skips `generated` and `stubs` directories,
+`.pyi` files, and symlinks. Keep generated-file policy in the consumer configuration.
+
+For an existing consumer with local Python hooks, add only `python-formatter` if its existing wrapper
+already supplies Ruff. Otherwise add `python-formatter-runner`, `tool-version`, and
+`shared-tool-catalog` too. Reconcile any existing formatter at those paths before syncing.
 
 ## Adopt into NautilusTrader
 

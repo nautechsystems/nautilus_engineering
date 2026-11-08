@@ -45,15 +45,20 @@ def read_lock(lock_path: Path, manifest: sync.Manifest) -> tuple[str, str, set[s
     repository = data.get("repository")
     revision = data.get("revision")
     files = data.get("file")
+
     if not isinstance(repository, str) or not repository:
         raise sync.SyncError("lock has an invalid repository")
+
     if repository != manifest.repository:
         raise sync.SyncError(f"lock names another source repository: {repository}")
+
     if not isinstance(revision, str) or REVISION_PATTERN.fullmatch(revision) is None:
         raise sync.SyncError("lock has an invalid revision")
+
     if not isinstance(files, list) or not files:
         raise sync.SyncError("lock has an invalid file list")
     artifacts: set[str] = set()
+
     for entry in files:
         if not isinstance(entry, dict) or not isinstance(entry.get("artifact"), str):
             raise sync.SyncError("lock contains an invalid file entry")
@@ -140,6 +145,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Report consumer adoption locks against the source repository HEAD",
     )
+
     parser.add_argument(
         "consumer",
         nargs="*",
@@ -164,14 +170,17 @@ def main() -> int:
     behind_count = 0
     error_count = 0
     previous_details = False
+
     for index, consumer in enumerate(consumers):
         try:
             lines, behind = consumer_status(manifest, sources, consumer)
         except (OSError, sync.SyncError) as exc:
             error_count += 1
             lines, behind = [f"error: {exc}"], False
+
         if behind:
             behind_count += 1
+
         if index and (previous_details or len(lines) > 1):
             _write("")
         _write(f"{consumer.name:<{width}}  {lines[0]}")
@@ -183,6 +192,7 @@ def main() -> int:
     if error_count:
         _write(f"{error_count} consumer report(s) failed", error=True)
         return 2
+
     if behind_count:
         _write(f"{behind_count} of {len(consumers)} consumer(s) are behind {revision[:7]}")
         return 1
