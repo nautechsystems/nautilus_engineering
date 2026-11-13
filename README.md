@@ -185,6 +185,10 @@ The report lists each pin with its kind, latest release, release UTC timestamp, 
 - uv uses 7 days because its pin updates also change consumer Docker images.
 - Other tools use 3 days.
 
+Rust toolchain versions are exempt from release-age cooldowns. Consumers keep exact compiler pins in
+`rust-toolchain.toml` and may adopt stable releases immediately. Cargo-installed tools remain subject to
+the tooling cooldown. Registry dependencies in `Cargo.lock` remain subject to the separate Cargo dependency cooldown.
+
 Python packages appear as `python`. Native tools such as prek, ruff, and uv appear as `tool` even when
 distributed through PyPI. To override both cooldown defaults, set `COOLDOWN_DAYS`.
 
