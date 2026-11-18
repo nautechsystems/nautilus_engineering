@@ -54,6 +54,13 @@ executable = false
 profiles = ["cargo"]
 
 [[artifact]]
+id = "check-rust-formatting"
+source = "scripts/check-rust-formatting.bash"
+target = "scripts/check-rust-formatting.bash"
+executable = true
+profiles = ["rust-format"]
+
+[[artifact]]
 id = "pre-commit-markdown"
 source = "pre-commit/markdown.yaml"
 target = ".nautilus-engineering/pre-commit/markdown.yaml"

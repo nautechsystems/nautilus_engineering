@@ -50,7 +50,8 @@ pre-commit checks. The `pre-commit` profile already includes `sync`.
 | `shell`          | Written standard, shfmt, and ShellCheck definitions                                | Bash-compatible scripts, local integration, and documented exceptions |
 | `yaml`           | yamllint config and definition                                                     | YAML paths and any generated-file exclusions                          |
 | `toml`           | Taplo config and definition                                                        | One complete repository Taplo policy                                  |
-| `cargo`          | Rust formatting, shared tools, version readers, cooldown check, and updates        | Local compiler pin, tracked lockfiles, Cargo policy, and script tests |
+| `cargo`          | rustfmt config, shared tools, version readers, cooldown check, and updates         | Local compiler pin, tracked lockfiles, Cargo policy, and script tests |
+| `rust-format`    | Rust control-flow spacing and module-order check                                   | rustfmt, Bash, awk, and a local hook that passes Rust files           |
 | `python`         | Python formatter, shared tool catalog, version readers, and no-build-package check | Local Python projects, uv lockfiles, and any unique tool pins         |
 | `security`       | Shared tool catalog, typed audit runner, version readers, and scanner installers   | Local audit policy, scanner configs, dependency files, and CI wiring  |
 | `tool-versions`  | Shared catalog and readers for Cargo, Rust, repository tools, and uv               | Local compiler pin and any unique tool pins                           |
@@ -165,6 +166,37 @@ python3 scripts/manage-nautilus-engineering-pre-commit.py check --staged
 
 Run the consumer's focused integration tests for each adopted check. Run its full pre-commit gate
 when the adoption changes managed hook definitions.
+
+## Rust formatting conventions
+
+Select the `rust-format` profile for a new adoption. For an existing lock, use
+`sync/sync.bash update` with `--add check-rust-formatting`.
+
+Add this consumer-owned hook after `cargo fmt`.
+
+```yaml
+- repo: local
+  hooks:
+    - id: check-rust-formatting
+      name: Check Rust formatting conventions
+      entry: bash scripts/check-rust-formatting.bash
+      language: system
+      types: [rust]
+```
+
+To check all Rust files selected by the hook in CI, run `prek run check-rust-formatting --all-files`.
+
+The script reports violations with a path and line number. It requires a blank line above control
+flow and task spawns, with exceptions for the start of a block and attached comments or attributes.
+The opening header line or first body line can waive the separator when it shares an identifier
+with the previous line. The script skips lines inside macro bodies and files under `generated`
+directories.
+
+Order contiguous top-level `mod name;` declarations by section. Put `#[macro_use]` modules first,
+then unconditional public, restricted, and private modules, then the same three visibility groups
+for cfg-gated modules, then test-only modules. A `cfg(test)` attribute or a direct `test` term in
+`cfg(all(...))` selects the test-only section. Alphabetize each section and leave one blank line
+between sections.
 
 ## Python formatting
 
